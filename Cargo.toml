@@ -1,6 +1,6 @@
 [package]
 name = "sdfdesk"
-version = "1.4.4"
+version = "2.0.0"
 authors = ["rustdesk <info@rustdesk.com>"]
 edition = "2021"
 build= "build.rs"
@@ -228,7 +228,7 @@ osx_minimum_system_version = "10.14"
 [profile.release]
 lto = true
 codegen-units = 1
-panic = 'abort'
-strip = true
+panic = 'unwind'
+strip = false
 #opt-level = 'z' # only have smaller size after strip
 rpath = true

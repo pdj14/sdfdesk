@@ -1,7 +1,6 @@
-#![cfg_attr(
-    all(not(debug_assertions), target_os = "windows"),
-    windows_subsystem = "windows"
-)]
+// Removed windows_subsystem = "windows" to enable console output for CLI
+// CLI applications need console subsystem to display output
+
 
 use librustdesk::*;
 
@@ -79,6 +78,20 @@ fn main() {
                 .help("Set permanent password")
                 .num_args(1),
         )
+        .arg(
+            Arg::new("cm")
+                .long("cm")
+                .help("Start connection manager")
+                .action(clap::ArgAction::SetTrue)
+                .hide(true),
+        )
+        .arg(
+            Arg::new("cm-no-ui")
+                .long("cm-no-ui")
+                .help("Start connection manager without UI")
+                .action(clap::ArgAction::SetTrue)
+                .hide(true),
+        )
         .get_matches();
 
     use hbb_common::{config::LocalConfig, env_logger::*};
@@ -129,8 +142,11 @@ fn main() {
     } else if matches.get_flag("server") {
         log::info!("id={}", hbb_common::config::Config::get_id());
         crate::start_server(true, false);
+    } else if matches.get_flag("cm") || matches.get_flag("cm-no-ui") {
+        crate::cli::start_cm_no_ui();
     } else if let Some(pwd) = matches.get_one::<String>("password") {
-        LocalConfig::set_option("password".to_owned(), pwd.to_owned());
+        use hbb_common::config::Config;
+        Config::set_permanent_password(pwd);
         println!("Password set successfully");
     }
     common::global_clean();

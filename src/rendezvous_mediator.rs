@@ -58,18 +58,24 @@ impl RendezvousMediator {
 
     pub async fn start_all() {
         crate::test_nat_type();
+        log::info!("RendezvousMediator::start_all entered");
         if config::is_outgoing_only() {
+            log::info!("is_outgoing_only is true, looping forever");
             loop {
                 sleep(1.).await;
             }
         }
+        log::info!("Starting hbbs_http sync");
         crate::hbbs_http::sync::start();
+        log::info!("hbbs_http sync started");
         #[cfg(target_os = "windows")]
         if crate::platform::is_installed() && crate::is_server() && !crate::is_custom_client() {
             crate::updater::start_auto_update();
         }
         check_zombie();
+        log::info!("Creating new server instance");
         let server = new_server();
+        log::info!("Server instance created");
         if config::option2bool("stop-service", &Config::get_option("stop-service")) {
             crate::test_rendezvous_server();
         }
@@ -92,18 +98,23 @@ impl RendezvousMediator {
             crate::platform::linux_desktop_manager::start_xdesktop();
         }
         scrap::codec::test_av1();
+        log::info!("Entering main loop");
         loop {
             let timeout = Arc::new(RwLock::new(CONNECT_TIMEOUT));
             let conn_start_time = Instant::now();
             *SOLVING_PK_MISMATCH.lock().await = "".to_owned();
-            if !config::option2bool("stop-service", &Config::get_option("stop-service"))
-                && !crate::platform::installing_service()
-            {
+            let stop_service = config::option2bool("stop-service", &Config::get_option("stop-service"));
+            let installing_service = crate::platform::installing_service();
+            log::info!("stop_service: {}, installing_service: {}", stop_service, installing_service);
+
+            if !stop_service && !installing_service {
                 let mut futs = Vec::new();
                 let servers = Config::get_rendezvous_servers();
+                log::info!("Rendezvous servers: {:?}", servers);
                 SHOULD_EXIT.store(false, Ordering::SeqCst);
                 MANUAL_RESTARTED.store(false, Ordering::SeqCst);
                 for host in servers.clone() {
+                    log::info!("Attempting to connect to rendezvous server: {}", host);
                     let server = server.clone();
                     let timeout = timeout.clone();
                     futs.push(tokio::spawn(async move {
@@ -156,6 +167,7 @@ impl RendezvousMediator {
     pub async fn start_udp(server: ServerPtr, host: String) -> ResultType<()> {
         let host = check_port(&host, RENDEZVOUS_PORT);
         log::info!("start udp: {host}");
+        log::info!("RendezvousMediator::start_udp host: {}", host);
         let (mut socket, mut addr) = new_udp_for(&host, CONNECT_TIMEOUT).await?;
         let mut rz = Self {
             addr: addr.clone(),
@@ -275,6 +287,7 @@ impl RendezvousMediator {
     ) -> ResultType<()> {
         match msg {
             Some(rendezvous_message::Union::RegisterPeerResponse(rpr)) => {
+                log::info!("Received RegisterPeerResponse from {}", self.host);
                 update_latency();
                 if rpr.request_pk {
                     log::info!("request_pk received from {}", self.host);
@@ -341,6 +354,7 @@ impl RendezvousMediator {
     pub async fn start_tcp(server: ServerPtr, host: String) -> ResultType<()> {
         let host = check_port(&host, RENDEZVOUS_PORT);
         log::info!("start tcp: {}", hbb_common::websocket::check_ws(&host));
+        log::info!("RendezvousMediator::start_tcp host: {}", host);
         let mut conn = connect_tcp(host.clone(), CONNECT_TIMEOUT).await?;
         let key = crate::get_key(true).await;
         crate::secure_tcp(&mut conn, &key).await?;
@@ -691,6 +705,7 @@ impl RendezvousMediator {
             id,
             self.addr,
         );
+        log::info!("Sending RegisterPeer for id: {:?} to rendezvous server {:?}", id, self.addr);
         let mut msg_out = Message::new();
         let serial = Config::get_serial();
         msg_out.set_register_peer(RegisterPeer {
