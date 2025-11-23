@@ -197,3 +197,24 @@ pub async fn start_one_port_forward(
     }
     log::info!("port forward (:{}) exit", port);
 }
+
+#[derive(Clone)]
+pub struct CliConnectionManager {}
+
+impl crate::ui_cm_interface::InvokeUiCM for CliConnectionManager {
+    fn add_connection(&self, _client: &crate::ui_cm_interface::Client) {}
+    fn remove_connection(&self, _id: i32, _close: bool) {}
+    fn new_message(&self, _id: i32, _text: String) {}
+    fn change_theme(&self, _dark: String) {}
+    fn change_language(&self) {}
+    fn show_elevation(&self, _show: bool) {}
+    fn update_voice_call_state(&self, _client: &crate::ui_cm_interface::Client) {}
+    fn file_transfer_log(&self, _action: &str, _log: &str) {}
+}
+
+pub fn start_cm_no_ui() {
+    let cm = crate::ui_cm_interface::ConnectionManager {
+        ui_handler: CliConnectionManager {},
+    };
+    crate::ui_cm_interface::start_ipc(cm);
+}

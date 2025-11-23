@@ -40,10 +40,10 @@ fn main() {
     use clap::{Arg, Command};
     use hbb_common::log;
 
-    let matches = Command::new("rustdesk")
+    let matches = Command::new("sdfdesk")
         .version(crate::VERSION)
-        .author("Purslane Ltd<info@rustdesk.com>")
-        .about("RustDesk command line tool")
+        .author("sdfdesk <dj14.park@gmail.com>")
+        .about("sdfdesk command line tool")
         .arg(
             Arg::new("port-forward")
                 .short('p')
@@ -91,6 +91,32 @@ fn main() {
                 .help("Start connection manager without UI")
                 .action(clap::ArgAction::SetTrue)
                 .hide(true),
+        )
+        .arg(
+            Arg::new("get-id")
+                .long("get-id")
+                .help("Get server ID")
+                .action(clap::ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("set-hbbs")
+                .long("set-hbbs")
+                .help("Set custom hbbs server (rendezvous server). Use empty string to reset to default")
+                .num_args(0..=1)
+                .default_missing_value(""),
+        )
+        .arg(
+            Arg::new("set-hbbr")
+                .long("set-hbbr")
+                .help("Set custom hbbr server (relay server). Use empty string to reset to default")
+                .num_args(0..=1)
+                .default_missing_value(""),
+        )
+        .arg(
+            Arg::new("show-config")
+                .long("show-config")
+                .help("Show current server configuration")
+                .action(clap::ArgAction::SetTrue),
         )
         .get_matches();
 
@@ -140,7 +166,11 @@ fn main() {
         let token = LocalConfig::get_option("access_token");
         cli::connect_test(p, key, token);
     } else if matches.get_flag("server") {
-        log::info!("id={}", hbb_common::config::Config::get_id());
+        let id = hbb_common::config::Config::get_id();
+        println!("========================================");
+        println!("Server ID: {}", id);
+        println!("========================================");
+        log::info!("id={}", id);
         crate::start_server(true, false);
     } else if matches.get_flag("cm") || matches.get_flag("cm-no-ui") {
         crate::cli::start_cm_no_ui();
@@ -148,6 +178,46 @@ fn main() {
         use hbb_common::config::Config;
         Config::set_permanent_password(pwd);
         println!("Password set successfully");
+    } else if matches.get_flag("get-id") {
+        let id = hbb_common::config::Config::get_id();
+        println!("{}", id);
+    } else if let Some(server) = matches.get_one::<String>("set-hbbs") {
+        use hbb_common::config::Config;
+        Config::set_option("custom-rendezvous-server".to_owned(), server.to_owned());
+        if server.is_empty() {
+            println!("HBBS server reset to default (rs-ny.rustdesk.com:21116)");
+        } else {
+            println!("HBBS server set to: {}", server);
+        }
+    } else if let Some(server) = matches.get_one::<String>("set-hbbr") {
+        use hbb_common::config::Config;
+        Config::set_option("relay-server".to_owned(), server.to_owned());
+        if server.is_empty() {
+            println!("HBBR server reset to default (rs-ny.rustdesk.com:21117)");
+        } else {
+            println!("HBBR server set to: {}", server);
+        }
+    } else if matches.get_flag("show-config") {
+        use hbb_common::config::Config;
+        println!("========================================");
+        println!("Current Server Configuration:");
+        println!("========================================");
+        println!("ID: {}", Config::get_id());
+        
+        let rendezvous_servers = Config::get_rendezvous_servers();
+        if rendezvous_servers.is_empty() {
+            println!("HBBS: (default) rs-ny.rustdesk.com");
+        } else {
+            println!("HBBS: {}", rendezvous_servers.join(", "));
+        }
+        
+        let relay_server = Config::get_option("relay-server");
+        if relay_server.is_empty() {
+            println!("HBBR: (default) rs-ny.rustdesk.com");
+        } else {
+            println!("HBBR: {}", relay_server);
+        }
+        println!("========================================");
     }
     common::global_clean();
 }

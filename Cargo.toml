@@ -1,10 +1,10 @@
 [package]
 name = "sdfdesk"
-version = "2.0.0"
-authors = ["rustdesk <info@rustdesk.com>"]
+version = "2.0.1"
+authors = ["sdfdesk <dj14.park@gmail.com>"]
 edition = "2021"
 build= "build.rs"
-description = "RustDesk Remote Desktop"
+description = "sdfdesk Remote Desktop"
 default-run = "sdfdesk"
 rust-version = "1.75"
 
@@ -200,10 +200,10 @@ members = ["libs/scrap", "libs/hbb_common", "libs/enigo", "libs/clipboard", "lib
 exclude = ["vdi/host", "examples/custom_plugin"]
 
 [package.metadata.winres]
-LegalCopyright = "Copyright © 2025 Purslane Ltd. All rights reserved."
-ProductName = "RustDesk"
-FileDescription = "RustDesk Remote Desktop"
-OriginalFilename = "rustdesk.exe"
+LegalCopyright = "Copyright © 2025 sdfdesk. All rights reserved."
+ProductName = "sdfdesk"
+FileDescription = "sdfdesk Remote Desktop"
+OriginalFilename = "sdfdesk.exe"
 
 [target.'cfg(target_os="windows")'.build-dependencies]
 winres = "0.1"
