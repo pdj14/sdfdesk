@@ -57,6 +57,54 @@ Please download Sciter dynamic library yourself.
 
 - run `cargo run`
 
+## Build Commands for sdfdesk
+
+### Debug Build
+```sh
+cargo build --bin sdfdesk
+```
+
+The output binary will be located at: `target/debug/sdfdesk.exe` (Windows) or `target/debug/sdfdesk` (Linux/macOS)
+
+### Release Build
+```sh
+cargo build --release --bin sdfdesk
+```
+
+The output binary will be located at: `target/release/sdfdesk.exe` (Windows) or `target/release/sdfdesk` (Linux/macOS)
+
+### Available Commands
+```sh
+# Display help
+sdfdesk --help
+
+# Display version
+sdfdesk --version
+
+# Get server ID
+sdfdesk --get-id
+
+# Show current configuration (ID, HBBS, HBBR, Key)
+sdfdesk --show-config
+
+# Set permanent password
+sdfdesk --password YOUR_PASSWORD
+
+# Set custom HBBS server (rendezvous server)
+sdfdesk --set-hbbs your-server.com:21116
+
+# Set custom HBBR server (relay server)
+sdfdesk --set-hbbr your-server.com:21117
+
+# Reset to default servers (no argument)
+sdfdesk --set-hbbs
+sdfdesk --set-hbbr
+
+# Start server
+sdfdesk --server
+```
+
+
 ## [Build](https://rustdesk.com/docs/en/dev/build/)
 
 ## How to Build on Linux
