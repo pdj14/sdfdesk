@@ -113,6 +113,13 @@ fn main() {
                 .default_missing_value(""),
         )
         .arg(
+            Arg::new("set-key")
+                .long("set-key")
+                .help("Set custom server public key. Use empty string to reset to default")
+                .num_args(0..=1)
+                .default_missing_value(""),
+        )
+        .arg(
             Arg::new("show-config")
                 .long("show-config")
                 .help("Show current server configuration")
@@ -197,6 +204,14 @@ fn main() {
         } else {
             println!("HBBR server set to: {}", server);
         }
+    } else if let Some(key) = matches.get_one::<String>("set-key") {
+        use hbb_common::config::Config;
+        Config::set_option("key".to_owned(), key.to_owned());
+        if key.is_empty() {
+            println!("Server key reset to default");
+        } else {
+            println!("Server key set successfully");
+        }
     } else if matches.get_flag("show-config") {
         use hbb_common::config::Config;
         println!("========================================");
@@ -217,6 +232,12 @@ fn main() {
         } else {
             println!("HBBR: {}", relay_server);
         }
+        
+        // Display public key
+        let key_pair = Config::get_key_pair();
+        let public_key = hbb_common::base64::encode(&key_pair.1);
+        println!("Key: {}", public_key);
+        
         println!("========================================");
     }
     common::global_clean();
