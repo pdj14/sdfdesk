@@ -233,10 +233,13 @@ fn main() {
             println!("HBBR: {}", relay_server);
         }
         
-        // Display public key
-        let key_pair = Config::get_key_pair();
-        let public_key = hbb_common::base64::encode(&key_pair.1);
-        println!("Key: {}", public_key);
+        // Display configured server key (for connecting to custom servers)
+        let server_key = Config::get_option("key");
+        if server_key.is_empty() {
+            println!("Key: (not set)");
+        } else {
+            println!("Key: {}", server_key);
+        }
         
         println!("========================================");
     }
