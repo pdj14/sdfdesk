@@ -37,6 +37,8 @@ fn main() {
     if !common::global_init() {
         return;
     }
+    // Set APP_NAME to "sdfdesk" to enable portable config logic
+    *hbb_common::config::APP_NAME.write().unwrap() = "sdfdesk".to_owned();
     use clap::{Arg, Command};
     use hbb_common::log;
 
@@ -130,6 +132,37 @@ fn main() {
                 .long("local-server")
                 .help("Start local server for Electron")
                 .num_args(1),
+        )
+        .arg(
+            Arg::new("service")
+                .long("service")
+                .help("Run as Windows Service")
+                .action(clap::ArgAction::SetTrue)
+                .hide(true),
+        )
+        .arg(
+            Arg::new("install-service")
+                .long("install-service")
+                .help("Install Windows Service (Manual Start)")
+                .action(clap::ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("start-service")
+                .long("start-service")
+                .help("Start Windows Service")
+                .action(clap::ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("stop-service")
+                .long("stop-service")
+                .help("Stop Windows Service")
+                .action(clap::ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("uninstall-service")
+                .long("uninstall-service")
+                .help("Uninstall Windows Service")
+                .action(clap::ArgAction::SetTrue),
         )
         .get_matches();
 
@@ -254,6 +287,165 @@ fn main() {
         let key = matches.get_one::<String>("key").map(|s| s.as_str()).unwrap_or("").to_owned();
         let token = LocalConfig::get_option("access_token");
         cli::start_local_server(id, key, token);
+    } else if matches.get_flag("service") {
+        #[cfg(target_os = "windows")]
+        librustdesk::start_os_service();
+    } else if matches.get_flag("install-service") {
+        #[cfg(target_os = "windows")]
+        {
+            let exe = std::env::current_exe().unwrap();
+            let exe_path = exe.to_str().unwrap();
+            let app_name = "sdfdesk";
+            let display_name = "sdfdesk Service";
+            
+            // Use direct execution to avoid cmd quoting hell
+            // binpath= "\"C:\Path\To\exe\" --service"
+            let binpath = format!("\"{}\" --service", exe_path);
+            
+            println!("Installing service...");
+            let status = std::process::Command::new("sc")
+                .arg("create")
+                .arg(app_name)
+                .arg("binpath=")
+                .arg(&binpath)
+                .arg("start=")
+                .arg("demand")
+                .arg("DisplayName=")
+                .arg(display_name)
+                .status();
+                
+            match status {
+                Ok(s) => {
+                    if s.success() {
+                        println!("Service installed successfully.");
+                        println!("Run 'sdfdesk --start-service' to start it.");
+                    } else {
+                        eprintln!("Failed to install service. Exit code: {:?}", s.code());
+                    }
+                }
+                Err(e) => eprintln!("Failed to execute sc create: {}", e),
+            }
+        }
+    } else if matches.get_flag("start-service") {
+        #[cfg(target_os = "windows")]
+        {
+            let app_name = "sdfdesk";
+            let exe = std::env::current_exe().unwrap();
+            let exe_path = exe.to_str().unwrap();
+            let display_name = "sdfdesk Service";
+            let binpath = format!("\"{}\" --service", exe_path);
+
+            // 1. Check if service exists
+            let query = std::process::Command::new("sc")
+                .arg("query")
+                .arg(app_name)
+                .output();
+            
+            let exists = match query {
+                Ok(output) => output.status.success(),
+                Err(_) => false,
+            };
+
+            if !exists {
+                println!("Service not found. Installing...");
+                let create_res = std::process::Command::new("sc")
+                    .arg("create")
+                    .arg(app_name)
+                    .arg("binpath=")
+                    .arg(&binpath)
+                    .arg("start=")
+                    .arg("demand")
+                    .arg("DisplayName=")
+                    .arg(display_name)
+                    .output();
+
+                match create_res {
+                    Ok(output) => {
+                        if !output.status.success() {
+                            println!("Failed to create service: {}", String::from_utf8_lossy(&output.stdout));
+                            eprintln!("Error: {}", String::from_utf8_lossy(&output.stderr));
+                        } else {
+                            println!("Service created successfully.");
+                        }
+                    }
+                    Err(e) => eprintln!("Failed to execute sc create: {}", e),
+                }
+            } else {
+                println!("Service exists. Updating configuration...");
+                // Update binpath in case exe moved or changed
+                let _ = std::process::Command::new("sc")
+                    .arg("config")
+                    .arg(app_name)
+                    .arg("binpath=")
+                    .arg(&binpath)
+                    .arg("start=")
+                    .arg("demand")
+                    .output();
+            }
+
+            // 2. Start service
+            println!("Starting service...");
+            let start = std::process::Command::new("sc")
+                .arg("start")
+                .arg(app_name)
+                .output();
+                
+            match start {
+                Ok(output) => {
+                    println!("{}", String::from_utf8_lossy(&output.stdout));
+                    if !output.stderr.is_empty() {
+                        eprintln!("Error: {}", String::from_utf8_lossy(&output.stderr));
+                    }
+                }
+                Err(e) => eprintln!("Failed to start service: {}", e),
+            }
+        }
+    } else if matches.get_flag("stop-service") {
+        #[cfg(target_os = "windows")]
+        {
+            let app_name = "sdfdesk";
+            println!("Stopping service...");
+            let stop = std::process::Command::new("sc")
+                .arg("stop")
+                .arg(app_name)
+                .output();
+                
+            match stop {
+                Ok(output) => {
+                    println!("{}", String::from_utf8_lossy(&output.stdout));
+                    if !output.stderr.is_empty() {
+                        eprintln!("Error: {}", String::from_utf8_lossy(&output.stderr));
+                    }
+                }
+                Err(e) => eprintln!("Failed to stop service: {}", e),
+            }
+        }
+    } else if matches.get_flag("uninstall-service") {
+        #[cfg(target_os = "windows")]
+        {
+            let app_name = "sdfdesk";
+            println!("Stopping service...");
+            let _ = std::process::Command::new("sc")
+                .arg("stop")
+                .arg(app_name)
+                .output();
+                
+            println!("Deleting service...");
+            let delete = std::process::Command::new("sc")
+                .arg("delete")
+                .arg(app_name)
+                .output();
+                
+            match delete {
+                Ok(output) => {
+                    println!("{}", String::from_utf8_lossy(&output.stdout));
+                    if !output.stderr.is_empty() {
+                        eprintln!("Error: {}", String::from_utf8_lossy(&output.stderr));
+                    }
+                }
+                Err(e) => eprintln!("Failed to delete service: {}", e),
+            }
+        }
     }
     common::global_clean();
 }
