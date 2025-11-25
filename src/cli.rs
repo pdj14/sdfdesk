@@ -37,7 +37,7 @@ impl Session {
         };
         session.lc.write().unwrap().initialize(
             id.to_owned(),
-            ConnType::PORT_FORWARD,
+            ConnType::DEFAULT_CONN,
             None,
             false,
             None,
@@ -130,39 +130,93 @@ impl Interface for Session {
 
 #[tokio::main(flavor = "current_thread")]
 pub async fn connect_test(id: &str, key: String, token: String) {
-    let (sender, mut receiver) = mpsc::unbounded_channel::<Data>();
-    let handler = Session::new(&id, sender, &key);
-    match crate::client::Client::start(id, &key, &token, ConnType::PORT_FORWARD, handler).await {
-        Err(err) => {
-            log::error!("Failed to connect {}: {}", &id, err);
-        }
-        Ok((stream_tuple, direct)) => {
-            let mut stream = stream_tuple.0;
-            log::info!("direct: {:?}", direct);
-            // rpassword::prompt_password("Input anything to exit").ok();
-            loop {
-                tokio::select! {
-                    res = hbb_common::timeout(READ_TIMEOUT, stream.next()) => match res {
-                        Err(_) => {
-                            log::error!("Timeout");
-                            break;
-                        }
-                        Ok(Some(Ok(bytes))) => {
-                            if let Ok(msg_in) = Message::parse_from_bytes(&bytes) {
-                                match msg_in.union {
-                                    Some(message::Union::Hash(hash)) => {
-                                        log::info!("Got hash");
-                                        break;
-                                    }
-                                    _ => {}
-                                }
+    let port = 21118;
+    // Create a shared sender that will be populated by io_loop
+    let sender: Arc<RwLock<Option<mpsc::UnboundedSender<Data>>>> = Default::default();
+    
+    match crate::electron_interface::start_electron_server(port, sender.clone()).await {
+        Ok(handler) => {
+            log::info!("Electron server started on port {}", port);
+            
+            // Auto-launch Electron client
+            if let Ok(mut exe_path) = std::env::current_exe() {
+                exe_path.pop(); // Get directory
+                log::info!("Current executable directory: {:?}", exe_path);
+
+                let client_names = ["sdf-client.exe", "sdfdesk-client.exe"];
+                let mut launched = false;
+
+                for name in client_names.iter() {
+                    let client_exe = exe_path.join(name);
+                    if client_exe.exists() {
+                        log::info!("Found client executable: {:?}", client_exe);
+                        match std::process::Command::new(&client_exe).spawn() {
+                            Ok(_) => {
+                                log::info!("Successfully launched client: {:?}", client_exe);
+                                launched = true;
+                                break;
+                            }
+                            Err(e) => {
+                                log::error!("Failed to launch client {:?}: {}", client_exe, e);
                             }
                         }
-                        _ => {}
                     }
                 }
+
+                if !launched {
+                    log::error!("Could not find or launch any client executable. Checked: {:?}", client_names);
+                    log::info!("Please manually run 'sdf-client.exe' or 'sdfdesk-client.exe'");
+                }
             }
+            
+            let mut session = crate::ui_session_interface::Session {
+                password: "".to_owned(),
+                args: vec![],
+                lc: Default::default(),
+                sender: sender, // Use the shared sender
+                thread: Default::default(),
+                ui_handler: handler,
+                server_keyboard_enabled: Default::default(),
+                server_file_transfer_enabled: Default::default(),
+                server_clipboard_enabled: Default::default(),
+                last_change_display: Arc::new(std::sync::Mutex::new(crate::ui_session_interface::ChangeDisplayRecord {
+                    time: tokio::time::Instant::now(),
+                    display: 0,
+                    width: 0,
+                    height: 0,
+                })),
+                connection_round_state: Arc::new(std::sync::Mutex::new(crate::ui_session_interface::ConnectionRoundState {
+                    round: 0,
+                    state: crate::ui_session_interface::ConnectionState::Disconnected,
+                })),
+                printer_names: Default::default(),
+                reconnect_count: Default::default(),
+                last_audit_note: Default::default(),
+                audit_guid: Default::default(),
+            };
+
+            if !key.is_empty() {
+                session.password = key.to_owned();
+            } else if PeerConfig::load(id).password.is_empty() {
+                session.password = rpassword::prompt_password("Enter password: ").unwrap();
+            }
+
+            session.lc.write().unwrap().initialize(
+                id.to_owned(),
+                ConnType::DEFAULT_CONN,
+                None,
+                false,
+                None,
+                None,
+                None,
+            );
+
+            tokio::task::spawn_blocking(move || {
+                log::info!("Starting io_loop in blocking task");
+                crate::ui_session_interface::io_loop(session, 0);
+            }).await.unwrap();
         }
+        Err(e) => log::error!("Failed to start Electron server: {}", e),
     }
 }
 
@@ -217,4 +271,76 @@ pub fn start_cm_no_ui() {
         ui_handler: CliConnectionManager {},
     };
     crate::ui_cm_interface::start_ipc(cm);
+}
+
+#[tokio::main(flavor = "current_thread")]
+pub async fn start_local_server(id: &str, key: String, _token: String) {
+    let port = 21118;
+    // Create a shared sender that will be populated by io_loop
+    let sender: Arc<RwLock<Option<mpsc::UnboundedSender<Data>>>> = Default::default();
+    
+    match crate::electron_interface::start_electron_server(port, sender.clone()).await {
+        Ok(handler) => {
+            log::info!("Electron server started on port {}", port);
+            
+            // Auto-launch Electron client
+            if let Ok(mut exe_path) = std::env::current_exe() {
+                exe_path.pop(); // Get directory
+                let client_exe = exe_path.join("sdfdesk-client 1.0.0.exe");
+                
+                log::info!("Attempting to launch client: {:?}", client_exe);
+                if let Err(e) = std::process::Command::new(client_exe).spawn() {
+                    log::error!("Failed to auto-launch client: {}", e);
+                    log::info!("Please manually run 'sdfdesk-client 1.0.0.exe'");
+                }
+            }
+            
+            let mut session = crate::ui_session_interface::Session {
+                password: "".to_owned(),
+                args: vec![],
+                lc: Default::default(),
+                sender: sender, // Use the shared sender
+                thread: Default::default(),
+                ui_handler: handler,
+                server_keyboard_enabled: Default::default(),
+                server_file_transfer_enabled: Default::default(),
+                server_clipboard_enabled: Default::default(),
+                last_change_display: Arc::new(std::sync::Mutex::new(crate::ui_session_interface::ChangeDisplayRecord {
+                    time: tokio::time::Instant::now(),
+                    display: 0,
+                    width: 0,
+                    height: 0,
+                })),
+                connection_round_state: Arc::new(std::sync::Mutex::new(crate::ui_session_interface::ConnectionRoundState {
+                    round: 0,
+                    state: crate::ui_session_interface::ConnectionState::Disconnected,
+                })),
+                printer_names: Default::default(),
+                reconnect_count: Default::default(),
+                last_audit_note: Default::default(),
+                audit_guid: Default::default(),
+            };
+
+            if !key.is_empty() {
+                session.password = key.to_owned();
+            } else if PeerConfig::load(id).password.is_empty() {
+                session.password = rpassword::prompt_password("Enter password: ").unwrap();
+            }
+
+            session.lc.write().unwrap().initialize(
+                id.to_owned(),
+                ConnType::DEFAULT_CONN,
+                None,
+                false,
+                None,
+                None,
+                None,
+            );
+
+            std::thread::spawn(move || {
+                crate::ui_session_interface::io_loop(session, 0);
+            }).join().unwrap();
+        }
+        Err(e) => log::error!("Failed to start Electron server: {}", e),
+    }
 }
