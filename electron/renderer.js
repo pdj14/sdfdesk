@@ -55,6 +55,28 @@ function connect() {
 
             // Get raw RGBA data
             // The header is 1 (type) + 8 (dims) = 9 bytes.
+            const rawData = new Uint8Array(event.data, 9);
+            const imageData = ctx.createImageData(width, height);
+
+            if (rawData.length === imageData.data.length) {
+                // Copy data
+                imageData.data.set(rawData);
+
+                // // Manually swap Red and Blue channels (BGRA -> RGBA or vice versa)
+                // // Because the previous Rust-side fix might not have worked or we need to invert it.
+                // // This is a fallback to ensure colors are correct.
+                // const data = imageData.data;
+                // for (let i = 0; i < data.length; i += 4) {
+                //     const red = data[i];
+                //     data[i] = data[i + 2]; // Set Red to Blue
+                //     data[i + 2] = red;     // Set Blue to Red
+                // }
+            } else {
+                // console.warn(`Data length mismatch: expected ${imageData.data.length}, got ${rawData.length}`);
+                // Ignore mismatch frames to avoid crash
+                return;
+            }
+
             ctx.putImageData(imageData, 0, 0);
 
         } else if (type === 1) { // JSON Message (Cursor)
