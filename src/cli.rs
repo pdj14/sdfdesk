@@ -139,6 +139,7 @@ pub async fn connect_test(id: &str, key: String, token: String) {
             log::info!("Electron server started on port {}", port);
             
             // Auto-launch Electron client
+            let mut electron_child = None;
             if let Ok(mut exe_path) = std::env::current_exe() {
                 exe_path.pop(); // Get directory
                 log::info!("Current executable directory: {:?}", exe_path);
@@ -147,13 +148,16 @@ pub async fn connect_test(id: &str, key: String, token: String) {
                 let mut launched = false;
 
                 for name in client_names.iter() {
+                if !launched {
                     let client_exe = exe_path.join(name);
                     if client_exe.exists() {
                         log::info!("Found client executable: {:?}", client_exe);
-                        match std::process::Command::new(&client_exe).spawn() {
-                            Ok(_) => {
+                        // Use tokio::process::Command for async management
+                        match tokio::process::Command::new(&client_exe).spawn() {
+                            Ok(child) => {
                                 log::info!("Successfully launched client: {:?}", client_exe);
                                 launched = true;
+                                electron_child = Some(child);
                                 break;
                             }
                             Err(e) => {
@@ -161,6 +165,7 @@ pub async fn connect_test(id: &str, key: String, token: String) {
                             }
                         }
                     }
+                }
                 }
 
                 if !launched {
@@ -211,10 +216,30 @@ pub async fn connect_test(id: &str, key: String, token: String) {
                 None,
             );
 
-            tokio::task::spawn_blocking(move || {
+            // Run io_loop and monitor child process
+            let io_task = tokio::task::spawn_blocking(move || {
                 log::info!("Starting io_loop in blocking task");
                 crate::ui_session_interface::io_loop(session, 0);
-            }).await.unwrap();
+            });
+
+            if let Some(mut child) = electron_child {
+                tokio::select! {
+                    _ = child.wait() => {
+                        log::info!("Electron client exited. Terminating session.");
+                        // io_task will be aborted when main returns? No, spawn_blocking tasks detach.
+                        // But we can't easily abort a blocking task.
+                        // However, we can just exit the process.
+                        std::process::exit(0);
+                    }
+                    _ = io_task => {
+                        log::info!("Session ended. Terminating Electron client.");
+                        child.kill().await.ok();
+                    }
+                }
+            } else {
+                // If no child launched (manual mode), just wait for io_loop
+                io_task.await.unwrap();
+            }
         }
         Err(e) => log::error!("Failed to start Electron server: {}", e),
     }

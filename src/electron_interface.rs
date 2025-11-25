@@ -55,9 +55,61 @@ enum InputEvent {
 }
 
 impl InvokeUiSession for ElectronUiHandler {
-    fn set_cursor_data(&self, _cd: CursorData) {}
+    fn set_cursor_data(&self, cd: CursorData) {
+        use hbb_common::sodiumoxide::base64;
+        let png_data = base64::encode(&cd.colors, base64::Variant::Original);
+        let msg = serde_json::json!({
+            "type": "cursor_data",
+            "id": cd.id,
+            "hotx": cd.hotx,
+            "hoty": cd.hoty,
+            "width": cd.width,
+            "height": cd.height,
+            "data": png_data
+        });
+        if let Some(sender) = self.video_sender.lock().unwrap().as_ref() {
+             // Send as text message (bytes)
+             let text = msg.to_string();
+             // We use the same channel for video (binary) and other messages?
+             // The channel is Vec<u8>.
+             // In start_electron_server, we handle rx.recv().
+             // If it's binary, we send Message::Binary.
+             // If we want to send Text, we need to differentiate.
+             // But the channel only accepts Vec<u8>.
+             // I should probably wrap it or use a convention.
+             // Current video frame: width(4) + height(4) + data.
+             // If I send JSON, I can prefix it with a magic number or just use a different channel?
+             // Or, since video frames are huge and JSON is small...
+             // Let's use a magic header for JSON?
+             // Or better: The `video_sender` is `mpsc::UnboundedSender<Vec<u8>>`.
+             // The receiver in `start_electron_server` sends `Message::Binary`.
+             // Electron `renderer.js` expects binary video frames.
+             
+             // Problem: `renderer.js` `ws.onmessage` assumes everything is a video frame!
+             // I need to change `renderer.js` to handle both.
+             // I can add a header byte: 0 = Video, 1 = JSON.
+             
+             let mut data = Vec::new();
+             data.push(1); // 1 = JSON
+             data.extend_from_slice(text.as_bytes());
+             sender.send(data).ok();
+        }
+    }
     fn set_cursor_id(&self, _id: String) {}
-    fn set_cursor_position(&self, _cp: CursorPosition) {}
+    fn set_cursor_position(&self, cp: CursorPosition) {
+        let msg = serde_json::json!({
+            "type": "cursor_position",
+            "x": cp.x,
+            "y": cp.y
+        });
+        if let Some(sender) = self.video_sender.lock().unwrap().as_ref() {
+             let text = msg.to_string();
+             let mut data = Vec::new();
+             data.push(1); // 1 = JSON
+             data.extend_from_slice(text.as_bytes());
+             sender.send(data).ok();
+        }
+    }
     fn set_display(&self, _x: i32, _y: i32, _w: i32, _h: i32, _cursor_embedded: bool, _scale: f64) {}
     fn switch_display(&self, _display: &SwitchDisplay) {}
     fn set_peer_info(&self, _peer_info: &PeerInfo) {}
@@ -102,9 +154,19 @@ impl InvokeUiSession for ElectronUiHandler {
     fn adapt_size(&self) {}
     
     fn on_rgba(&self, _display: usize, rgba: &mut ImageRgb) {
-        // Simple serialization: width (4 bytes) + height (4 bytes) + raw data
+        // Simple serialization: type (1 byte) + width (4 bytes) + height (4 bytes) + raw data
+        // Type 0 = Video Frame
         // log::info!("on_rgba: {}x{}, len: {}", rgba.w, rgba.h, rgba.raw.len());
-        let mut data = Vec::with_capacity(8 + rgba.raw.len());
+        
+        // Swap BGR to RGB (or vice versa)
+        // RustDesk usually uses BGRA internally on Windows. HTML5 Canvas expects RGBA.
+        // We need to swap the 0th (B) and 2nd (R) byte of every 4-byte pixel.
+        for chunk in rgba.raw.chunks_exact_mut(4) {
+            chunk.swap(0, 2);
+        }
+
+        let mut data = Vec::with_capacity(1 + 8 + rgba.raw.len());
+        data.push(0); // 0 = Video Frame
         data.extend_from_slice(&(rgba.w as u32).to_le_bytes());
         data.extend_from_slice(&(rgba.h as u32).to_le_bytes());
         data.extend_from_slice(&rgba.raw);

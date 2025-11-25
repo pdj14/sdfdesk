@@ -55,3 +55,9 @@ vcpkg_installed
 flutter/lib/generated_plugin_registrant.dart
 libsciter.dylib
 flutter/web/
+
+# Node
+node_modules
+electron/node_modules
+electron/dist
+electron/build

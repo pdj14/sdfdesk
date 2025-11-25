@@ -80,13 +80,14 @@ pub struct SessionPermissionConfig {
 }
 
 pub struct ChangeDisplayRecord {
-    time: Instant,
-    display: i32,
-    width: i32,
-    height: i32,
+    pub time: Instant,
+    pub display: i32,
+    pub width: i32,
+    pub height: i32,
 }
 
-enum ConnectionState {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ConnectionState {
     Connecting,
     Connected,
     Disconnected,
@@ -94,8 +95,8 @@ enum ConnectionState {
 
 /// ConnectionRoundState is used to control the reconnecting logic.
 pub struct ConnectionRoundState {
-    round: u32,
-    state: ConnectionState,
+    pub round: u32,
+    pub state: ConnectionState,
 }
 
 impl ConnectionRoundState {

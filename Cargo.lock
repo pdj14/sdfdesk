@@ -6846,7 +6846,7 @@ dependencies = [
 
 [[package]]
 name = "sdfdesk"
-version = "2.0.2"
+version = "2.1.0"
 dependencies = [
  "android-wakelock",
  "android_logger",
@@ -6940,6 +6940,8 @@ dependencies = [
  "terminfo",
  "termios 0.3.3",
  "tiny-skia",
+ "tokio",
+ "tokio-tungstenite",
  "totp-rs",
  "tray-icon",
  "ttf-parser",

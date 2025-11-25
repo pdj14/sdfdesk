@@ -125,6 +125,12 @@ fn main() {
                 .help("Show current server configuration")
                 .action(clap::ArgAction::SetTrue),
         )
+        .arg(
+            Arg::new("local-server")
+                .long("local-server")
+                .help("Start local server for Electron")
+                .num_args(1),
+        )
         .get_matches();
 
     use hbb_common::{config::LocalConfig, env_logger::*};
@@ -242,6 +248,12 @@ fn main() {
         }
         
         println!("========================================");
+    } else if let Some(id) = matches.get_one::<String>("local-server") {
+        common::test_rendezvous_server();
+        common::test_nat_type();
+        let key = matches.get_one::<String>("key").map(|s| s.as_str()).unwrap_or("").to_owned();
+        let token = LocalConfig::get_option("access_token");
+        cli::start_local_server(id, key, token);
     }
     common::global_clean();
 }

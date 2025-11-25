@@ -39,6 +39,8 @@ use common::*;
 mod auth_2fa;
 #[cfg(feature = "cli")]
 pub mod cli;
+#[cfg(feature = "cli")]
+pub mod electron_interface;
 #[cfg(not(target_os = "ios"))]
 mod clipboard;
 #[cfg(not(any(target_os = "android", target_os = "ios", feature = "cli")))]
