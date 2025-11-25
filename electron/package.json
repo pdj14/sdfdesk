@@ -1,6 +1,6 @@
 {
   "name": "sdfdesk-electron",
-  "version": "1.0.0",
+  "version": "2.1.0",
   "description": "Electron frontend for sdfdesk",
   "main": "main.js",
   "scripts": {
