@@ -129,6 +129,50 @@ function connect() {
                     cursorOverlay.style.left = `${screenX}px`;
                     cursorOverlay.style.top = `${screenY}px`;
                     // cursorOverlay.style.width = `${msg.width || 32}px`; // Optional
+                } else if (msg.type === 'error') {
+                    // Display error message overlay
+                    console.error('Connection error:', msg);
+
+                    const errorDiv = document.createElement('div');
+                    errorDiv.style.cssText = `
+                        position: fixed;
+                        top: 50%;
+                        left: 50%;
+                        transform: translate(-50%, -50%);
+                        background-color: rgba(220, 38, 38, 0.95);
+                        color: white;
+                        padding: 30px;
+                        border-radius: 10px;
+                        z-index: 10000;
+                        max-width: 400px;
+                        text-align: center;
+                        box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+                        font-family: Arial, sans-serif;
+                    `;
+
+                    errorDiv.innerHTML = `
+                        <h2 style="margin: 0 0 10px 0; font-size: 20px;">${msg.title || 'Error'}</h2>
+                        <p style="margin: 0 0 20px 0; font-size: 16px;">${msg.message || 'An error occurred'}</p>
+                        <button onclick="this.parentElement.remove()" style="
+                            padding: 10px 30px;
+                            font-size: 14px;
+                            border: none;
+                            border-radius: 5px;
+                            background-color: white;
+                            color: #dc2626;
+                            cursor: pointer;
+                            font-weight: bold;
+                        ">Close</button>
+                    `;
+
+                    document.body.appendChild(errorDiv);
+
+                    // Auto-close after 15 seconds
+                    setTimeout(() => {
+                        if (errorDiv.parentNode) {
+                            errorDiv.remove();
+                        }
+                    }, 15000);
                 }
             } catch (e) {
                 console.error("Failed to parse JSON message", e);

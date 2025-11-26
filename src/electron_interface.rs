@@ -192,8 +192,27 @@ impl InvokeUiSession for ElectronUiHandler {
         }
     }
 
-    fn msgbox(&self, _msgtype: &str, _title: &str, _text: &str, _link: &str, _retry: bool) {
-        log::info!("msgbox: type={}, title={}, text={}, link={}, retry={}", _msgtype, _title, _text, _link, _retry);
+    fn msgbox(&self, msgtype: &str, title: &str, text: &str, link: &str, _retry: bool) {
+        // Log critical errors
+        if msgtype == "error" || msgtype == "re-input-password" {
+            log::error!("Connection error - {}: {}", title, text);
+        }
+        
+        // Send error notification to Electron client
+        let msg = serde_json::json!({
+            "type": "error",
+            "title": title,
+            "message": text,
+            "msgtype": msgtype,
+            "link": link
+        });
+        
+        if let Some(sender) = self.video_sender.lock().unwrap().as_ref() {
+            let mut data = Vec::new();
+            data.push(1); // 1 = JSON message
+            data.extend_from_slice(msg.to_string().as_bytes());
+            let _ = sender.send(data);
+        }
     }
     #[cfg(any(target_os = "android", target_os = "ios"))]
     fn clipboard(&self, _content: String) {}
@@ -300,8 +319,6 @@ fn handle_input_event(sender: &Arc<std::sync::RwLock<Option<mpsc::UnboundedSende
             use hbb_common::sha2::{Sha256, Digest};
             use hbb_common::protobuf::Message as _;
             
-            log::info!("handle_hash called with pass length: {}", pass.len());
-            
             // Hash the password with the server's salt
             let mut hasher = Sha256::new();
             hasher.update(pass.as_bytes());
@@ -323,7 +340,6 @@ fn handle_input_event(sender: &Arc<std::sync::RwLock<Option<mpsc::UnboundedSende
             let mut msg_out = hbb_common::message_proto::Message::new();
             msg_out.set_login_request(login);
             
-            log::info!("Sending LoginRequest with hashed password");
             peer.send(&msg_out).await.ok();
         }
         async fn handle_login_from_ui(&self, _u: String, _p: String, _p2: String, _r: bool, _peer: &mut hbb_common::Stream) {}
