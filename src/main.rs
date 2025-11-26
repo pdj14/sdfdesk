@@ -61,6 +61,20 @@ fn main() {
                 .num_args(1),
         )
         .arg(
+            Arg::new("unlock-pw")
+                .long("unlock-pw")
+                .help("OS password for remote unlock")
+                .num_args(1)
+                .required(false),
+        )
+        .arg(
+            Arg::new("unlock-id")
+                .long("unlock-id")
+                .help("OS username for remote unlock")
+                .num_args(1)
+                .required(false),
+        )
+        .arg(
             Arg::new("key")
                 .short('k')
                 .long("key")
@@ -72,6 +86,12 @@ fn main() {
                 .short('s')
                 .long("server")
                 .help("Start server")
+                .action(clap::ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("direct-server")
+                .long("direct-server")
+                .help("Enable direct IP access (port 21118)")
                 .action(clap::ArgAction::SetTrue),
         )
         .arg(
@@ -97,8 +117,50 @@ fn main() {
         .arg(
             Arg::new("get-id")
                 .long("get-id")
-                .help("Get server ID")
-                .action(clap::ArgAction::SetTrue),
+                .action(clap::ArgAction::SetTrue)
+                .help("Get ID"),
+        )
+        .arg(
+            Arg::new("service")
+                .long("service")
+                .action(clap::ArgAction::SetTrue)
+                .help("Run as service"),
+        )
+        .arg(
+            Arg::new("option")
+                .long("option")
+                .action(clap::ArgAction::Set)
+                .help("Set option"),
+        )
+        .arg(
+            Arg::new("config")
+                .long("config")
+                .action(clap::ArgAction::Set)
+                .help("Set config"),
+        )
+        .arg(
+            Arg::new("install-service")
+                .long("install-service")
+                .action(clap::ArgAction::SetTrue)
+                .help("Install service"),
+        )
+        .arg(
+            Arg::new("uninstall-service")
+                .long("uninstall-service")
+                .action(clap::ArgAction::SetTrue)
+                .help("Uninstall service"),
+        )
+        .arg(
+            Arg::new("start-service")
+                .long("start-service")
+                .action(clap::ArgAction::SetTrue)
+                .help("Start service"),
+        )
+        .arg(
+            Arg::new("stop-service")
+                .long("stop-service")
+                .action(clap::ArgAction::SetTrue)
+                .help("Stop service"),
         )
         .arg(
             Arg::new("set-hbbs")
@@ -133,41 +195,10 @@ fn main() {
                 .help("Start local server for Electron")
                 .num_args(1),
         )
-        .arg(
-            Arg::new("service")
-                .long("service")
-                .help("Run as Windows Service")
-                .action(clap::ArgAction::SetTrue)
-                .hide(true),
-        )
-        .arg(
-            Arg::new("install-service")
-                .long("install-service")
-                .help("Install Windows Service (Manual Start)")
-                .action(clap::ArgAction::SetTrue),
-        )
-        .arg(
-            Arg::new("start-service")
-                .long("start-service")
-                .help("Start Windows Service")
-                .action(clap::ArgAction::SetTrue),
-        )
-        .arg(
-            Arg::new("stop-service")
-                .long("stop-service")
-                .help("Stop Windows Service")
-                .action(clap::ArgAction::SetTrue),
-        )
-        .arg(
-            Arg::new("uninstall-service")
-                .long("uninstall-service")
-                .help("Uninstall Windows Service")
-                .action(clap::ArgAction::SetTrue),
-        )
         .get_matches();
 
-    use hbb_common::{config::LocalConfig, env_logger::*};
-    init_from_env(Env::default().filter_or(DEFAULT_FILTER_ENV, "info"));
+    use hbb_common::config::LocalConfig;
+    let _logger_handle = hbb_common::init_log(false, "sdfdesk");
 
     if let Some(p) = matches.get_one::<String>("port-forward") {
         let options: Vec<String> = p.split(":").map(|x| x.to_owned()).collect();
@@ -210,13 +241,20 @@ fn main() {
         common::test_nat_type();
         let key = matches.get_one::<String>("key").map(|s| s.as_str()).unwrap_or("").to_owned();
         let token = LocalConfig::get_option("access_token");
-        cli::connect_test(p, key, token);
+        let unlock_id = matches.get_one::<String>("unlock-id").map(|s| s.to_owned()).unwrap_or_default();
+        let unlock_pw = matches.get_one::<String>("unlock-pw").map(|s| s.to_owned()).unwrap_or_default();
+        cli::connect_test(p, key, token, unlock_id, unlock_pw);
     } else if matches.get_flag("server") {
         let id = hbb_common::config::Config::get_id();
         println!("========================================");
         println!("Server ID: {}", id);
         println!("========================================");
         log::info!("id={}", id);
+        log::info!("id={}", id);
+        if matches.get_flag("direct-server") {
+            hbb_common::config::Config::set_option("direct-server".to_owned(), "Y".to_owned());
+            println!("Direct server enabled (port 21118)");
+        }
         crate::start_server(true, false);
     } else if matches.get_flag("cm") || matches.get_flag("cm-no-ui") {
         crate::cli::start_cm_no_ui();
@@ -288,6 +326,9 @@ fn main() {
         let token = LocalConfig::get_option("access_token");
         cli::start_local_server(id, key, token);
     } else if matches.get_flag("service") {
+        if matches.get_flag("direct-server") {
+            hbb_common::config::Config::set_option("direct-server".to_owned(), "Y".to_owned());
+        }
         #[cfg(target_os = "windows")]
         librustdesk::start_os_service();
     } else if matches.get_flag("install-service") {
@@ -300,7 +341,10 @@ fn main() {
             
             // Use direct execution to avoid cmd quoting hell
             // binpath= "\"C:\Path\To\exe\" --service"
-            let binpath = format!("\"{}\" --service", exe_path);
+            let mut binpath = format!("\"{}\" --service", exe_path);
+            if matches.get_flag("direct-server") {
+                binpath.push_str(" --direct-server");
+            }
             
             println!("Installing service...");
             let status = std::process::Command::new("sc")
@@ -333,7 +377,10 @@ fn main() {
             let exe = std::env::current_exe().unwrap();
             let exe_path = exe.to_str().unwrap();
             let display_name = "sdfdesk Service";
-            let binpath = format!("\"{}\" --service", exe_path);
+            let mut binpath = format!("\"{}\" --service", exe_path);
+            if matches.get_flag("direct-server") {
+                binpath.push_str(" --direct-server");
+            }
 
             // 1. Check if service exists
             let query = std::process::Command::new("sc")

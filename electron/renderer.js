@@ -17,11 +17,11 @@ let videoHeight = 0;
 // Retry connection logic
 function connect() {
     console.log("Connecting to WebSocket...");
-    const ws = new WebSocket("ws://127.0.0.1:21118");
+    const ws = new WebSocket("ws://127.0.0.1:21121");
     ws.binaryType = "arraybuffer";
 
     ws.onopen = () => {
-        console.log("WebSocket connected to ws://127.0.0.1:21118");
+        console.log("WebSocket connected to ws://127.0.0.1:21121");
     };
 
     ws.onerror = (error) => {

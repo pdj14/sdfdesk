@@ -129,8 +129,8 @@ impl Interface for Session {
 }
 
 #[tokio::main(flavor = "current_thread")]
-pub async fn connect_test(id: &str, key: String, token: String) {
-    let port = 21118;
+pub async fn connect_test(id: &str, key: String, token: String, unlock_id: String, unlock_pw: String) {
+    let port = 21121; // Changed from 21118 to avoid conflict with direct server
     // Create a shared sender that will be populated by io_loop
     let sender: Arc<RwLock<Option<mpsc::UnboundedSender<Data>>>> = Default::default();
     
@@ -138,39 +138,40 @@ pub async fn connect_test(id: &str, key: String, token: String) {
         Ok(handler) => {
             log::info!("Electron server started on port {}", port);
             
-            // Auto-launch Electron client
+            // Launch Electron client
             let mut electron_child = None;
-            if let Ok(mut exe_path) = std::env::current_exe() {
-                exe_path.pop(); // Get directory
-                log::info!("Current executable directory: {:?}", exe_path);
-
-                let client_names = ["sdf-client.exe", "sdfdesk-client.exe"];
-                let mut launched = false;
-
-                for name in client_names.iter() {
-                if !launched {
-                    let client_exe = exe_path.join(name);
-                    if client_exe.exists() {
-                        log::info!("Found client executable: {:?}", client_exe);
-                        // Use tokio::process::Command for async management
-                        match tokio::process::Command::new(&client_exe).spawn() {
-                            Ok(child) => {
-                                log::info!("Successfully launched client: {:?}", client_exe);
-                                launched = true;
-                                electron_child = Some(child);
-                                break;
-                            }
-                            Err(e) => {
-                                log::error!("Failed to launch client {:?}: {}", client_exe, e);
+            let mut launched = false;
+            if let Ok(exe_path) = std::env::current_exe() {
+                if let Some(exe_path) = exe_path.parent() {
+                    let client_names = ["sdf-client.exe", "sdfdesk-client.exe"];
+                    for name in client_names.iter() {
+                        if !launched {
+                            let client_exe = exe_path.join(name);
+                            if client_exe.exists() {
+                                log::info!("Found client executable: {:?}", client_exe);
+                                // Use tokio::process::Command for async management
+                                match tokio::process::Command::new(&client_exe)
+                                    .kill_on_drop(true)
+                                    .spawn() 
+                                {
+                                    Ok(child) => {
+                                        log::info!("Successfully launched client: {:?}", client_exe);
+                                        launched = true;
+                                        electron_child = Some(child);
+                                        break;
+                                    }
+                                    Err(e) => {
+                                        log::error!("Failed to launch client {:?}: {}", client_exe, e);
+                                    }
+                                }
                             }
                         }
                     }
-                }
-                }
 
-                if !launched {
-                    log::error!("Could not find or launch any client executable. Checked: {:?}", client_names);
-                    log::info!("Please manually run 'sdf-client.exe' or 'sdfdesk-client.exe'");
+                    if !launched {
+                        log::error!("Could not find or launch any client executable. Checked: {:?}", client_names);
+                        log::info!("Please manually run 'sdf-client.exe' or 'sdfdesk-client.exe'");
+                    }
                 }
             }
             
@@ -219,6 +220,86 @@ pub async fn connect_test(id: &str, key: String, token: String) {
             // Run io_loop and monitor child process
             let io_task = tokio::task::spawn_blocking(move || {
                 log::info!("Starting io_loop in blocking task");
+                // If unlock credentials are provided, send Login message immediately after connection
+                // But io_loop blocks. We need to inject the login data.
+                // Actually, Data::Login is sent via sender.
+                // We can spawn a task to send it after a short delay or hook into on_connected.
+                // For now, let's just pass it to io_loop if possible? No, io_loop takes session.
+                
+                // Better approach: Spawn a thread to send Login data once sender is ready.
+                // But sender is in session.
+                
+                if !unlock_id.is_empty() || !unlock_pw.is_empty() {
+                    let session_clone = session.clone();
+                    let unlock_id_clone = unlock_id.clone();
+                    let unlock_pw_clone = unlock_pw.clone();
+                    // Spawn a thread to handle login and auto-type
+                    std::thread::spawn(move || {
+                        // 1. Send standard LoginRequest
+                        std::thread::sleep(std::time::Duration::from_secs(2));
+                        if let Some(sender) = session_clone.sender.read().unwrap().as_ref() {
+                            let mut login_data = Data::Login(Default::default());
+                            if let Data::Login(ref mut info) = login_data {
+                                info.0 = unlock_id_clone.clone();
+                                info.1 = unlock_pw_clone.clone();
+                            }
+                            sender.send(login_data).ok();
+                        }
+
+                        // 2. Auto-type password if provided (fallback for PIN/Lock screens)
+                        if !unlock_pw_clone.is_empty() {
+                            std::thread::sleep(std::time::Duration::from_secs(2));
+                            if let Some(sender) = session_clone.sender.read().unwrap().as_ref() {
+                                // Helper to send a key press and release
+                                let send_key = |k: ControlKey| {
+                                    let mut evt = KeyEvent::new();
+                                    evt.set_control_key(k);
+                                    evt.down = true;
+                                    evt.mode = KeyboardMode::Legacy.into();
+                                    sender.send(Data::Message(Message {
+                                        union: Some(message::Union::KeyEvent(evt.clone())),
+                                        ..Default::default()
+                                    })).ok();
+                                    
+                                    evt.down = false;
+                                    sender.send(Data::Message(Message {
+                                        union: Some(message::Union::KeyEvent(evt)),
+                                        ..Default::default()
+                                    })).ok();
+                                };
+
+                                // A. Wake up screen / Focus input
+                                send_key(ControlKey::Return);
+
+                                // Wait a bit for focus
+                                std::thread::sleep(std::time::Duration::from_millis(500));
+
+                                // B. Type the password
+                                let mut evt = KeyEvent::new();
+                                evt.set_seq(unlock_pw_clone.clone());
+                                evt.mode = KeyboardMode::Translate.into();
+                                evt.down = true; // KeyPress
+                                sender.send(Data::Message(Message {
+                                    union: Some(message::Union::KeyEvent(evt.clone())),
+                                    ..Default::default()
+                                })).ok();
+                                
+                                evt.down = false; // KeyRelease
+                                sender.send(Data::Message(Message {
+                                    union: Some(message::Union::KeyEvent(evt)),
+                                    ..Default::default()
+                                })).ok();
+
+                                // Wait a bit
+                                std::thread::sleep(std::time::Duration::from_millis(500));
+
+                                // C. Submit
+                                send_key(ControlKey::Return);
+                            }
+                        }
+                    });
+                }
+
                 crate::ui_session_interface::io_loop(session, 0);
             });
 
@@ -233,7 +314,17 @@ pub async fn connect_test(id: &str, key: String, token: String) {
                     }
                     _ = io_task => {
                         log::info!("Session ended. Terminating Electron client.");
-                        child.kill().await.ok();
+                        if let Err(e) = child.kill().await {
+                            log::error!("Failed to kill Electron client: {}", e);
+                            // Fallback to taskkill on Windows
+                            #[cfg(target_os = "windows")]
+                            if let Some(pid) = child.id() {
+                                log::info!("Attempting taskkill for PID {}", pid);
+                                let _ = std::process::Command::new("taskkill")
+                                    .args(&["/F", "/T", "/PID", &pid.to_string()])
+                                    .output();
+                            }
+                        }
                     }
                 }
             } else {
@@ -300,7 +391,7 @@ pub fn start_cm_no_ui() {
 
 #[tokio::main(flavor = "current_thread")]
 pub async fn start_local_server(id: &str, key: String, _token: String) {
-    let port = 21118;
+    let port = 21121; // Changed from 21118
     // Create a shared sender that will be populated by io_loop
     let sender: Arc<RwLock<Option<mpsc::UnboundedSender<Data>>>> = Default::default();
     
@@ -311,7 +402,7 @@ pub async fn start_local_server(id: &str, key: String, _token: String) {
             // Auto-launch Electron client
             if let Ok(mut exe_path) = std::env::current_exe() {
                 exe_path.pop(); // Get directory
-                let client_exe = exe_path.join("sdfdesk-client 1.0.0.exe");
+                let client_exe = exe_path.join("sdfdesk-client.exe");
                 
                 log::info!("Attempting to launch client: {:?}", client_exe);
                 if let Err(e) = std::process::Command::new(client_exe).spawn() {

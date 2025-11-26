@@ -358,6 +358,7 @@ pub fn is_inited_msg() -> Option<Message> {
 }
 
 pub async fn update_get_sync_displays_on_login() -> ResultType<Vec<DisplayInfo>> {
+    log::info!("update_get_sync_displays_on_login entered");
     #[cfg(target_os = "linux")]
     {
         if !is_x11() {
@@ -368,7 +369,9 @@ pub async fn update_get_sync_displays_on_login() -> ResultType<Vec<DisplayInfo>>
     let displays = display_service::try_get_displays();
     #[cfg(windows)]
     let displays = display_service::try_get_displays_add_amyuni_headless();
+    log::info!("try_get_displays result: {:?}", displays.as_ref().map(|d| d.len()));
     check_update_displays(&displays?);
+    log::info!("update_get_sync_displays_on_login finished");
     Ok(SYNC_DISPLAYS.lock().unwrap().displays.clone())
 }
 

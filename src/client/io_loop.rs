@@ -1329,6 +1329,7 @@ impl<T: InvokeUiSession> Remote<T> {
                         }
                     }
                     Some(login_response::Union::PeerInfo(pi)) => {
+                        log::info!("Received PeerInfo: displays={:?}, current_display={}", pi.displays, pi.current_display);
                         let peer_version = pi.version.clone();
                         let peer_platform = pi.platform.clone();
                         self.set_peer_info(&pi);
@@ -2312,6 +2313,7 @@ impl<T: InvokeUiSession> Remote<T> {
     }
 
     fn new_video_thread(&mut self, display: usize) {
+        log::info!("new_video_thread: display={}", display);
         let video_queue = Arc::new(RwLock::new(ArrayQueue::new(client::VIDEO_QUEUE_SIZE)));
         let (video_sender, video_receiver) = std::sync::mpsc::channel::<MediaData>();
         let decode_fps = Arc::new(RwLock::new(None));
@@ -2340,8 +2342,10 @@ impl<T: InvokeUiSession> Remote<T> {
                   pixelbuffer: bool| {
                 *frame_count.write().unwrap() += 1;
                 if pixelbuffer {
+                    log::info!("Calling handler.on_rgba for display {}, size {}x{}", display, data.w, data.h);
                     handler.on_rgba(display, data);
                 } else {
+                    log::info!("Calling handler.on_texture for display {}", display);
                     #[cfg(all(feature = "vram", feature = "flutter"))]
                     handler.on_texture(display, _texture);
                 }

@@ -216,7 +216,7 @@ pub async fn create_tcp_connection(
                             bail!("Handshake failed: invalid public sign key length from peer");
                         }
                     } else {
-                        log::error!("Handshake failed: invalid message type");
+                        log::error!("Handshake failed: invalid message type: {:?}", msg_in);
                     }
                 } else {
                     bail!("Handshake failed: invalid message format");

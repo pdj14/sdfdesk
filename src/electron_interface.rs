@@ -122,7 +122,17 @@ impl InvokeUiSession for ElectronUiHandler {
     fn set_permission(&self, _name: &str, _value: bool) {}
     fn close_success(&self) {}
     fn update_quality_status(&self, _qs: QualityStatus) {}
-    fn set_connection_type(&self, _is_secured: bool, _direct: bool, _stream_type: &str) {}
+    fn set_connection_type(&self, is_secured: bool, direct: bool, stream_type: &str) {
+        println!("Connection Established:");
+        println!("  - Secured: {}", is_secured);
+        println!("  - Direct (P2P): {}", direct);
+        println!("  - Stream Type: '{}'", stream_type);
+        if direct {
+            println!("  => Mode: Direct Connection");
+        } else {
+            println!("  => Mode: Relay Connection");
+        }
+    }
     fn set_fingerprint(&self, _fingerprint: String) {}
     fn job_error(&self, _id: i32, _err: String, _file_num: i32) {}
     fn job_done(&self, _id: i32, _file_num: i32) {}
@@ -156,7 +166,7 @@ impl InvokeUiSession for ElectronUiHandler {
     fn on_rgba(&self, _display: usize, rgba: &mut ImageRgb) {
         // Simple serialization: type (1 byte) + width (4 bytes) + height (4 bytes) + raw data
         // Type 0 = Video Frame
-        // log::info!("on_rgba: {}x{}, len: {}", rgba.w, rgba.h, rgba.raw.len());
+        log::info!("ElectronUiHandler::on_rgba: {}x{}, len: {}", rgba.w, rgba.h, rgba.raw.len());
         
         // Swap BGR to RGB (or vice versa)
         // RustDesk usually uses BGRA internally on Windows. HTML5 Canvas expects RGBA.
@@ -174,11 +184,17 @@ impl InvokeUiSession for ElectronUiHandler {
         if let Some(sender) = self.video_sender.lock().unwrap().as_ref() {
             if let Err(e) = sender.send(data) {
                 log::error!("Failed to send video frame to channel: {}", e);
+            } else {
+                log::info!("Sent video frame to Electron channel");
             }
+        } else {
+            log::error!("video_sender is None!");
         }
     }
 
-    fn msgbox(&self, _msgtype: &str, _title: &str, _text: &str, _link: &str, _retry: bool) {}
+    fn msgbox(&self, _msgtype: &str, _title: &str, _text: &str, _link: &str, _retry: bool) {
+        log::info!("msgbox: type={}, title={}, text={}, link={}, retry={}", _msgtype, _title, _text, _link, _retry);
+    }
     #[cfg(any(target_os = "android", target_os = "ios"))]
     fn clipboard(&self, _content: String) {}
     fn cancel_msgbox(&self, _tag: &str) {}
@@ -221,6 +237,7 @@ pub async fn start_electron_server(port: u16, input_sender: Arc<std::sync::RwLoc
                     loop {
                         tokio::select! {
                             Some(frame_data) = rx.recv() => {
+                                log::info!("Sending video frame to WebSocket, size: {}", frame_data.len());
                                 let msg = Message::Binary(frame_data.into());
                                 if let Err(e) = ws_stream.send(msg).await {
                                     log::error!("Error sending video frame: {}", e);
@@ -279,7 +296,36 @@ fn handle_input_event(sender: &Arc<std::sync::RwLock<Option<mpsc::UnboundedSende
         fn msgbox(&self, _msgtype: &str, _title: &str, _text: &str, _link: &str) {}
         fn handle_login_error(&self, _err: &str) -> bool { false }
         fn handle_peer_info(&self, _pi: PeerInfo) {}
-        async fn handle_hash(&self, _pass: &str, _hash: Hash, _peer: &mut hbb_common::Stream) {}
+        async fn handle_hash(&self, pass: &str, hash: Hash, peer: &mut hbb_common::Stream) {
+            use hbb_common::sha2::{Sha256, Digest};
+            use hbb_common::protobuf::Message as _;
+            
+            log::info!("handle_hash called with pass length: {}", pass.len());
+            
+            // Hash the password with the server's salt
+            let mut hasher = Sha256::new();
+            hasher.update(pass.as_bytes());
+            hasher.update(&hash.salt);
+            let hashed_password = hasher.finalize();
+            
+            // Construct LoginRequest
+            let mut login = LoginRequest::new();
+            login.username = String::new(); // Will be set by io_loop
+            login.password = hbb_common::bytes::Bytes::from(hashed_password.as_slice().to_vec());
+            login.my_id = hbb_common::config::Config::get_id();
+            login.my_platform = hbb_common::whoami::platform().to_string();
+            login.version = crate::VERSION.to_owned();
+            
+            let mut os_login = OSLogin::new();
+            os_login.username = crate::username();
+            login.os_login = Some(os_login).into();
+            
+            let mut msg_out = hbb_common::message_proto::Message::new();
+            msg_out.set_login_request(login);
+            
+            log::info!("Sending LoginRequest with hashed password");
+            peer.send(&msg_out).await.ok();
+        }
         async fn handle_login_from_ui(&self, _u: String, _p: String, _p2: String, _r: bool, _peer: &mut hbb_common::Stream) {}
         async fn handle_test_delay(&self, _t: TestDelay, _peer: &mut hbb_common::Stream) {}
     }
