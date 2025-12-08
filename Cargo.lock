@@ -6846,7 +6846,7 @@ dependencies = [
 
 [[package]]
 name = "sdfdesk"
-version = "2.1.1"
+version = "2.1.3"
 dependencies = [
  "android-wakelock",
  "android_logger",
@@ -6896,6 +6896,7 @@ dependencies = [
  "libloading 0.8.4",
  "libpulse-binding",
  "libpulse-simple-binding",
+ "log",
  "mac_address",
  "magnum-opus",
  "nix 0.29.0",

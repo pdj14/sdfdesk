@@ -1,6 +1,6 @@
 [package]
 name = "sdfdesk"
-version = "2.1.3"
+version = "2.1.4"
 authors = ["sdfdesk <dj14.park@gmail.com>"]
 edition = "2021"
 build= "build.rs"
@@ -54,6 +54,7 @@ serde_json = "1.0"
 serde_repr = "0.1"
 cfg-if = "1.0"
 lazy_static = "1.4"
+log = "0.4"
 sha2 = "0.10"
 repng = "0.2"
 parity-tokio-ipc = { git = "https://github.com/rustdesk-org/parity-tokio-ipc" }
@@ -83,8 +84,8 @@ shutdown_hooks = "0.1"
 totp-rs = { version = "5.4", default-features = false, features = ["gen_secret", "otpauth"] }
 stunclient = "0.4"
 kcp-sys= { git = "https://github.com/rustdesk-org/kcp-sys"}
-reqwest = { version = "0.12", features = ["blocking", "socks", "json", "native-tls", "rustls-tls", "rustls-tls-native-roots", "gzip"], default-features=false }
-tokio-tungstenite = "0.26"
+reqwest = { version = "0.12", features = ["blocking", "socks", "json", "rustls-tls", "rustls-tls-native-roots", "gzip", "native-tls"], default-features=false }
+tokio-tungstenite = { version = "0.26", features = ["rustls-tls-native-roots"] }
 tokio = { version = "1", features = ["process", "rt", "macros", "sync", "time"] }
 
 [target.'cfg(not(target_os = "linux"))'.dependencies]
@@ -188,14 +189,15 @@ gtk = "0.18"
 termios = "0.3"
 terminfo = "0.8"
 winit = "0.30"
-
-[target.'cfg(any(target_os = "linux", target_os = "android"))'.dependencies]
 openssl = { version = "0.10", features = ["vendored"] }
+
+
 
 [target.'cfg(target_os = "android")'.dependencies]
 android_logger = "0.13"
 jni = "0.21"
 android-wakelock = { git = "https://github.com/rustdesk-org/android-wakelock" }
+openssl = { version = "0.10", features = ["vendored"] }
 
 [workspace]
 members = ["libs/scrap", "libs/hbb_common", "libs/enigo", "libs/clipboard", "libs/virtual_display", "libs/virtual_display/dylib", "libs/portable", "libs/remote_printer"]

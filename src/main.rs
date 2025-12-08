@@ -261,7 +261,12 @@ fn main() {
     } else if let Some(pwd) = matches.get_one::<String>("password") {
         use hbb_common::config::Config;
         Config::set_permanent_password(pwd);
+        // Set approve mode to password-only (no UI accept needed)
+        Config::set_option("approve-mode".to_owned(), "password".to_owned());
+        // Use permanent password only (disable temporary password)
+        Config::set_option("verification-method".to_owned(), "use-permanent-password".to_owned());
         println!("Password set successfully");
+        println!("Approve mode set to: password-only (no UI accept required)");
     } else if matches.get_flag("get-id") {
         let id = hbb_common::config::Config::get_id();
         println!("{}", id);

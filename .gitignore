@@ -61,3 +61,10 @@ node_modules
 electron/node_modules
 electron/dist
 electron/build
+
+# Android NDK (download separately - see docs/ANDROID_NDK_SETUP.md)
+android-ndk*
+
+# Java APK build artifacts
+java_apk/app/build/
+java_apk/.gradle/
