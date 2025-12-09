@@ -1,5 +1,5 @@
 use crate::ui_session_interface::InvokeUiSession;
-use crate::client::QualityStatus;
+use crate::client::{QualityStatus, Interface};
 use hbb_common::{
     log,
     message_proto::*,
@@ -52,6 +52,11 @@ enum InputEvent {
     KeyDown { key: String },
     #[serde(rename = "keyup")]
     KeyUp { key: String },
+    // Login control events
+    #[serde(rename = "send_sas")]
+    SendSas,
+    #[serde(rename = "send_text")]
+    SendText { text: String, enter: bool },
 }
 
 impl InvokeUiSession for ElectronUiHandler {
@@ -166,7 +171,7 @@ impl InvokeUiSession for ElectronUiHandler {
     fn on_rgba(&self, _display: usize, rgba: &mut ImageRgb) {
         // Simple serialization: type (1 byte) + width (4 bytes) + height (4 bytes) + raw data
         // Type 0 = Video Frame
-        log::info!("ElectronUiHandler::on_rgba: {}x{}, len: {}", rgba.w, rgba.h, rgba.raw.len());
+        // Frame logging removed for performance
         
         // Swap BGR to RGB (or vice versa)
         // RustDesk usually uses BGRA internally on Windows. HTML5 Canvas expects RGBA.
@@ -185,7 +190,7 @@ impl InvokeUiSession for ElectronUiHandler {
             if let Err(e) = sender.send(data) {
                 log::error!("Failed to send video frame to channel: {}", e);
             } else {
-                log::info!("Sent video frame to Electron channel");
+                // Frame sent successfully
             }
         } else {
             log::error!("video_sender is None!");
@@ -256,7 +261,7 @@ pub async fn start_electron_server(port: u16, input_sender: Arc<std::sync::RwLoc
                     loop {
                         tokio::select! {
                             Some(frame_data) = rx.recv() => {
-                                log::info!("Sending video frame to WebSocket, size: {}", frame_data.len());
+                                // Sending video frame to WebSocket
                                 let msg = Message::Binary(frame_data.into());
                                 if let Err(e) = ws_stream.send(msg).await {
                                     log::error!("Error sending video frame: {}", e);
@@ -319,16 +324,22 @@ fn handle_input_event(sender: &Arc<std::sync::RwLock<Option<mpsc::UnboundedSende
             use hbb_common::sha2::{Sha256, Digest};
             use hbb_common::protobuf::Message as _;
             
-            // Hash the password with the server's salt
+            // Step 1: SHA256(password + salt)
             let mut hasher = Sha256::new();
             hasher.update(pass.as_bytes());
             hasher.update(&hash.salt);
-            let hashed_password = hasher.finalize();
+            let first_hash = hasher.finalize();
+            
+            // Step 2: SHA256(first_hash + challenge) - MUST match server expectation!
+            let mut hasher2 = Sha256::new();
+            hasher2.update(&first_hash[..]);
+            hasher2.update(&hash.challenge);
+            let final_hash = hasher2.finalize();
             
             // Construct LoginRequest
             let mut login = LoginRequest::new();
             login.username = String::new(); // Will be set by io_loop
-            login.password = hbb_common::bytes::Bytes::from(hashed_password.as_slice().to_vec());
+            login.password = hbb_common::bytes::Bytes::from(final_hash.as_slice().to_vec());
             login.my_id = hbb_common::config::Config::get_id();
             login.my_platform = hbb_common::whoami::platform().to_string();
             login.version = crate::VERSION.to_owned();
@@ -383,6 +394,34 @@ fn handle_input_event(sender: &Arc<std::sync::RwLock<Option<mpsc::UnboundedSende
         InputEvent::KeyUp { key } => {
             log::info!("KeyUp: {}", key);
             send_key(&key, false, &interface);
+        }
+        InputEvent::SendSas => {
+            log::info!("Sending Ctrl+Alt+Delete (SAS)...");
+            // Send CtrlAltDel as a KeyEvent with control key
+            use hbb_common::message_proto::{KeyEvent, ControlKey, KeyboardMode};
+            let mut key_event = KeyEvent::new();
+            key_event.press = true;
+            key_event.mode = KeyboardMode::Legacy.into();
+            key_event.set_control_key(ControlKey::CtrlAltDel);
+            
+            let mut msg_out = hbb_common::message_proto::Message::new();
+            msg_out.set_key_event(key_event);
+            interface.send(Data::Message(msg_out));
+        }
+        InputEvent::SendText { text, enter } => {
+            log::info!("Sending text (len={}), enter={}", text.len(), enter);
+            // Type each character as key events
+            for c in text.chars() {
+                let key_str = c.to_string();
+                send_key(&key_str, true, &interface);
+                send_key(&key_str, false, &interface);
+            }
+            // Send Enter key if requested
+            if enter {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+                send_key("Enter", true, &interface);
+                send_key("Enter", false, &interface);
+            }
         }
     }
 }

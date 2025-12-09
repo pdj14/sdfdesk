@@ -129,7 +129,13 @@ impl Interface for Session {
 }
 
 #[tokio::main(flavor = "current_thread")]
-pub async fn connect_test(id: &str, key: String, token: String, unlock_id: String, unlock_pw: String) {
+pub async fn connect_test(id: &str, key: String, token: String, unlock_id: String, unlock_pw: String, rdp_id: String, rdp_pw: String) {
+    // Set RDP credentials for headless mode (will be included in LoginRequest)
+    if !rdp_id.is_empty() && !rdp_pw.is_empty() {
+        crate::client::set_client_rdp_credentials(rdp_id.clone(), rdp_pw.clone());
+        log::info!("RDP credentials set for headless mode");
+    }
+    
     let port = 21121; // Changed from 21118 to avoid conflict with direct server
     // Create a shared sender that will be populated by io_loop
     let sender: Arc<RwLock<Option<mpsc::UnboundedSender<Data>>>> = Default::default();
@@ -150,9 +156,16 @@ pub async fn connect_test(id: &str, key: String, token: String, unlock_id: Strin
                             if client_exe.exists() {
                                 log::info!("Found client executable: {:?}", client_exe);
                                 // Use tokio::process::Command for async management
-                                match tokio::process::Command::new(&client_exe)
-                                    .kill_on_drop(true)
-                                    .spawn() 
+                                // Pass unlock credentials as environment variables
+                                let mut cmd = tokio::process::Command::new(&client_exe);
+                                cmd.kill_on_drop(true);
+                                if !unlock_id.is_empty() {
+                                    cmd.env("SDFDESK_UNLOCK_ID", &unlock_id);
+                                }
+                                if !unlock_pw.is_empty() {
+                                    cmd.env("SDFDESK_UNLOCK_PW", &unlock_pw);
+                                }
+                                match cmd.spawn() 
                                 {
                                     Ok(child) => {
                                         log::info!("Successfully launched client: {:?}", client_exe);
@@ -220,86 +233,7 @@ pub async fn connect_test(id: &str, key: String, token: String, unlock_id: Strin
             // Run io_loop and monitor child process
             let io_task = tokio::task::spawn_blocking(move || {
                 log::info!("Starting io_loop in blocking task");
-                // If unlock credentials are provided, send Login message immediately after connection
-                // But io_loop blocks. We need to inject the login data.
-                // Actually, Data::Login is sent via sender.
-                // We can spawn a task to send it after a short delay or hook into on_connected.
-                // For now, let's just pass it to io_loop if possible? No, io_loop takes session.
-                
-                // Better approach: Spawn a thread to send Login data once sender is ready.
-                // But sender is in session.
-                
-                if !unlock_id.is_empty() || !unlock_pw.is_empty() {
-                    let session_clone = session.clone();
-                    let unlock_id_clone = unlock_id.clone();
-                    let unlock_pw_clone = unlock_pw.clone();
-                    // Spawn a thread to handle login and auto-type
-                    std::thread::spawn(move || {
-                        // 1. Send standard LoginRequest
-                        std::thread::sleep(std::time::Duration::from_secs(2));
-                        if let Some(sender) = session_clone.sender.read().unwrap().as_ref() {
-                            let mut login_data = Data::Login(Default::default());
-                            if let Data::Login(ref mut info) = login_data {
-                                info.0 = unlock_id_clone.clone();
-                                info.1 = unlock_pw_clone.clone();
-                            }
-                            sender.send(login_data).ok();
-                        }
-
-                        // 2. Auto-type password if provided (fallback for PIN/Lock screens)
-                        if !unlock_pw_clone.is_empty() {
-                            std::thread::sleep(std::time::Duration::from_secs(2));
-                            if let Some(sender) = session_clone.sender.read().unwrap().as_ref() {
-                                // Helper to send a key press and release
-                                let send_key = |k: ControlKey| {
-                                    let mut evt = KeyEvent::new();
-                                    evt.set_control_key(k);
-                                    evt.down = true;
-                                    evt.mode = KeyboardMode::Legacy.into();
-                                    sender.send(Data::Message(Message {
-                                        union: Some(message::Union::KeyEvent(evt.clone())),
-                                        ..Default::default()
-                                    })).ok();
-                                    
-                                    evt.down = false;
-                                    sender.send(Data::Message(Message {
-                                        union: Some(message::Union::KeyEvent(evt)),
-                                        ..Default::default()
-                                    })).ok();
-                                };
-
-                                // A. Wake up screen / Focus input
-                                send_key(ControlKey::Return);
-
-                                // Wait a bit for focus
-                                std::thread::sleep(std::time::Duration::from_millis(500));
-
-                                // B. Type the password
-                                let mut evt = KeyEvent::new();
-                                evt.set_seq(unlock_pw_clone.clone());
-                                evt.mode = KeyboardMode::Translate.into();
-                                evt.down = true; // KeyPress
-                                sender.send(Data::Message(Message {
-                                    union: Some(message::Union::KeyEvent(evt.clone())),
-                                    ..Default::default()
-                                })).ok();
-                                
-                                evt.down = false; // KeyRelease
-                                sender.send(Data::Message(Message {
-                                    union: Some(message::Union::KeyEvent(evt)),
-                                    ..Default::default()
-                                })).ok();
-
-                                // Wait a bit
-                                std::thread::sleep(std::time::Duration::from_millis(500));
-
-                                // C. Submit
-                                send_key(ControlKey::Return);
-                            }
-                        }
-                    });
-                }
-
+                // Note: Auto-login logic removed. Use Electron UI buttons (CAD, Send ID, Send PW) instead.
                 crate::ui_session_interface::io_loop(session, 0);
             });
 

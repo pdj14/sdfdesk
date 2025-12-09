@@ -87,6 +87,9 @@ message LoginRequest {
   OSLogin os_login = 12;
   string my_platform = 13;
   bytes hwid = 14;
+  // RDP credentials for headless mode (client passes, server uses for localhost RDP)
+  string rdp_username = 17;
+  string rdp_password = 18;
 }
 
 message Terminal {

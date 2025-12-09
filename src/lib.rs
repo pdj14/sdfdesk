@@ -78,3 +78,6 @@ pub mod privacy_mode;
 pub mod virtual_display_manager;
 
 mod kcp_stream;
+
+#[cfg(windows)]
+pub mod rdp_session;

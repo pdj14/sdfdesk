@@ -6846,7 +6846,7 @@ dependencies = [
 
 [[package]]
 name = "sdfdesk"
-version = "2.1.4"
+version = "2.1.5"
 dependencies = [
  "android-wakelock",
  "android_logger",

@@ -265,6 +265,34 @@ fn create_capturer(
     _current: usize,
     _portable_service_running: bool,
 ) -> ResultType<Box<dyn TraitCapturer>> {
+    // Auto-start RDP session if in RDP mode
+    #[cfg(windows)]
+    {
+        if crate::rdp_session::is_rdp_mode_enabled() {
+            log::info!("RDP mode is enabled, checking display status...");
+            let has_display = crate::rdp_session::has_display_connected();
+            log::info!("Display connected: {}", has_display);
+            
+            // Always try to start RDP session when RDP mode is enabled
+            // This ensures RDP session is available for headless scenarios
+            log::info!("Starting RDP session for headless mode...");
+            match crate::rdp_session::start_rdp_session_if_needed() {
+                Ok(started) => {
+                    if started {
+                        log::info!("RDP session started successfully");
+                    } else {
+                        log::info!("RDP session already running or not needed");
+                    }
+                }
+                Err(e) => {
+                    log::warn!("Failed to start RDP session: {}", e);
+                }
+            }
+        } else {
+            log::debug!("RDP mode not enabled");
+        }
+    }
+    
     #[cfg(not(windows))]
     let c: Option<Box<dyn TraitCapturer>> = None;
     #[cfg(windows)]
@@ -702,7 +730,16 @@ fn run(vs: VideoService) -> ResultType<()> {
             if crate::platform::windows::desktop_changed()
                 && !crate::portable_service::client::running()
             {
-                bail!("Desktop changed");
+                // Try to switch to new desktop instead of disconnecting
+                log::info!("Desktop changed (e.g., lock screen transition), attempting to switch...");
+                if crate::platform::windows::try_change_desktop() {
+                    log::info!("Desktop switch successful, recreating capturer...");
+                    bail!("SWITCH"); // This triggers capturer recreation without full disconnect
+                } else {
+                    // If we can't switch, wait a bit and retry - don't disconnect immediately
+                    log::warn!("Desktop switch pending, waiting for desktop to stabilize...");
+                    std::thread::sleep(std::time::Duration::from_millis(500));
+                }
             }
         }
         let now = time::Instant::now();

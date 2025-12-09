@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  flutter-build:
+    build:
+      context: .
+      dockerfile: Dockerfile.flutter
+    volumes:
+      - .:/app
+      - gradle-cache:/root/.gradle
+      - flutter-cache:/opt/flutter/.pub-cache
+      - cargo-cache:/root/.cargo/registry
+    environment:
+      - ANDROID_HOME=/opt/android-sdk
+      - ANDROID_NDK_HOME=/opt/android-sdk/ndk/26.1.10909125
+    working_dir: /app
+    command: bash -c "cd flutter && flutter build apk --release"
+
+volumes:
+  gradle-cache:
+  flutter-cache:
+  cargo-cache:

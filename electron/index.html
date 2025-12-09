@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html>
+
 <head>
     <meta charset="UTF-8">
     <title>sdfdesk Electron Client</title>
@@ -7,21 +8,157 @@
         body {
             margin: 0;
             padding: 0;
-            background-color: #000;
+            background-color: #1a1a2e;
             overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            font-family: 'Segoe UI', Arial, sans-serif;
+        }
+
+        /* Top control bar */
+        .control-bar {
+            background: linear-gradient(135deg, #16213e 0%, #0f3460 100%);
+            padding: 8px 15px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            border-bottom: 1px solid #e94560;
+            flex-shrink: 0;
+        }
+
+        .control-bar h3 {
+            color: #e94560;
+            margin: 0;
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .control-group label {
+            color: #a0a0a0;
+            font-size: 12px;
+        }
+
+        .control-group input {
+            padding: 6px 10px;
+            border: 1px solid #e94560;
+            border-radius: 4px;
+            background: #1a1a2e;
+            color: #fff;
+            font-size: 12px;
+            width: 120px;
+        }
+
+        .control-group input:focus {
+            outline: none;
+            border-color: #ff6b6b;
+            box-shadow: 0 0 5px rgba(233, 69, 96, 0.5);
+        }
+
+        .btn {
+            padding: 6px 14px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 600;
+            transition: all 0.2s ease;
+        }
+
+        .btn-cad {
+            background: linear-gradient(135deg, #e94560 0%, #ff6b6b 100%);
+            color: #fff;
+        }
+
+        .btn-cad:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(233, 69, 96, 0.4);
+        }
+
+        .btn-send {
+            background: linear-gradient(135deg, #0f3460 0%, #16213e 100%);
+            color: #e94560;
+            border: 1px solid #e94560;
+        }
+
+        .btn-send:hover {
+            background: #e94560;
+            color: #fff;
+        }
+
+        .divider {
+            width: 1px;
+            height: 30px;
+            background: #e94560;
+            opacity: 0.3;
+        }
+
+        /* Canvas container */
+        .canvas-container {
+            flex: 1;
             display: flex;
             justify-content: center;
             align-items: center;
-            height: 100vh;
+            background-color: #000;
+            overflow: hidden;
         }
+
         canvas {
             max-width: 100%;
             max-height: 100%;
         }
+
+        /* Status indicator */
+        .status {
+            color: #4ade80;
+            font-size: 11px;
+            margin-left: auto;
+        }
+
+        .status.disconnected {
+            color: #ef4444;
+        }
     </style>
 </head>
+
 <body>
-    <canvas id="screenCanvas"></canvas>
+    <div class="control-bar">
+        <h3>🔐 Login Controls</h3>
+
+        <div class="divider"></div>
+
+        <button class="btn btn-cad" id="btnCAD" title="Send Ctrl+Alt+Delete">
+            ⌨️ Ctrl+Alt+Del
+        </button>
+
+        <div class="divider" id="dividerID" style="display:none;"></div>
+
+        <!-- Send ID button - only shown when SDFDESK_UNLOCK_ID is provided -->
+        <button class="btn btn-send" id="btnSendID" style="display:none;" title="Send provided User ID">
+            📝 Send UserId
+        </button>
+
+        <div class="divider" id="dividerPW" style="display:none;"></div>
+
+        <!-- Send PW button - only shown when SDFDESK_UNLOCK_PW is provided -->
+        <button class="btn btn-send" id="btnSendPW" style="display:none;" title="Send provided Password + Enter">
+            🔑 Send PW
+        </button>
+
+        <span class="status" id="status">● Connecting...</span>
+    </div>
+
+    <div class="canvas-container">
+        <canvas id="screenCanvas"></canvas>
+    </div>
+
     <script src="renderer.js"></script>
 </body>
+
 </html>

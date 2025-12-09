@@ -2876,3 +2876,231 @@ pub mod server_side {
         jboolean::from(crate::server::is_clipboard_service_ok())
     }
 }
+
+/// Client-side JNI functions for remote desktop connection
+#[cfg(target_os = "android")]
+pub mod client_side {
+    use hbb_common::{config, log};
+    use jni::{
+        objects::{JByteBuffer, JClass, JString},
+        sys::{jboolean, jint, jstring},
+        JNIEnv,
+    };
+    use std::collections::HashMap;
+    use std::sync::{Arc, Mutex, RwLock};
+    use once_cell::sync::Lazy;
+
+    /// Simple session state for Java client
+    #[derive(Default)]
+    struct JavaSession {
+        connected: bool,
+        width: i32,
+        height: i32,
+        rgba_data: Vec<u8>,
+        error: Option<String>,
+    }
+
+    /// Global session storage
+    static JAVA_SESSIONS: Lazy<RwLock<HashMap<String, Arc<Mutex<JavaSession>>>>> = 
+        Lazy::new(|| RwLock::new(HashMap::new()));
+
+    #[no_mangle]
+    pub unsafe extern "system" fn Java_com_example_rustdeskjava_RustDeskCore_init(
+        _env: JNIEnv,
+        _class: JClass,
+    ) {
+        log::debug!("RustDeskCore.init() from JNI");
+        // Initialize any necessary components
+        #[cfg(target_os = "android")]
+        android_logger::init_once(
+            android_logger::Config::default()
+                .with_max_level(log::LevelFilter::Debug)
+                .with_tag("RustDeskCore"),
+        );
+        log::info!("RustDeskCore initialized for Java client");
+    }
+
+    #[no_mangle]
+    pub unsafe extern "system" fn Java_com_example_rustdeskjava_RustDeskCore_startSession(
+        env: JNIEnv,
+        _class: JClass,
+        peer_id: JString,
+        password: JString,
+    ) {
+        let mut env = env;
+        let peer_id_str: String = match env.get_string(&peer_id) {
+            Ok(s) => s.into(),
+            Err(e) => {
+                log::error!("Failed to get peer_id string: {:?}", e);
+                return;
+            }
+        };
+        let password_str: String = match env.get_string(&password) {
+            Ok(s) => s.into(),
+            Err(e) => {
+                log::error!("Failed to get password string: {:?}", e);
+                return;
+            }
+        };
+
+        log::info!("startSession called for peer: {}, password_len: {}", peer_id_str, password_str.len());
+
+        // Create a new session
+        let session = Arc::new(Mutex::new(JavaSession::default()));
+        {
+            let mut sessions = JAVA_SESSIONS.write().unwrap();
+            sessions.insert(peer_id_str.clone(), session.clone());
+        }
+
+        // TODO: This is a placeholder. Real implementation needs to:
+        // 1. Establish connection to the peer using the password
+        // 2. Start receiving video frames
+        // 3. Update the session state with width/height/rgba_data
+        
+        // For now, mark as connected (placeholder)
+        {
+            let mut s = session.lock().unwrap();
+            s.connected = true;
+            s.error = Some("Client connection not yet implemented - JNI bridge needs full session handling".to_string());
+        }
+        
+        log::info!("Session created for peer: {}", peer_id_str);
+    }
+
+    #[no_mangle]
+    pub unsafe extern "system" fn Java_com_example_rustdeskjava_RustDeskCore_stopSession(
+        env: JNIEnv,
+        _class: JClass,
+        peer_id: JString,
+    ) {
+        let mut env = env;
+        let peer_id_str: String = match env.get_string(&peer_id) {
+            Ok(s) => s.into(),
+            Err(_) => return,
+        };
+
+        log::info!("stopSession called for peer: {}", peer_id_str);
+        
+        let mut sessions = JAVA_SESSIONS.write().unwrap();
+        sessions.remove(&peer_id_str);
+        
+        log::info!("Session stopped for peer: {}", peer_id_str);
+    }
+
+    #[no_mangle]
+    pub unsafe extern "system" fn Java_com_example_rustdeskjava_RustDeskCore_getRgbaSize(
+        env: JNIEnv,
+        _class: JClass,
+        peer_id: JString,
+    ) -> jint {
+        let mut env = env;
+        let peer_id_str: String = match env.get_string(&peer_id) {
+            Ok(s) => s.into(),
+            Err(_) => return 0,
+        };
+
+        let sessions = JAVA_SESSIONS.read().unwrap();
+        if let Some(session) = sessions.get(&peer_id_str) {
+            let s = session.lock().unwrap();
+            s.rgba_data.len() as jint
+        } else {
+            0
+        }
+    }
+
+    #[no_mangle]
+    pub unsafe extern "system" fn Java_com_example_rustdeskjava_RustDeskCore_getWidth(
+        env: JNIEnv,
+        _class: JClass,
+        peer_id: JString,
+    ) -> jint {
+        let mut env = env;
+        let peer_id_str: String = match env.get_string(&peer_id) {
+            Ok(s) => s.into(),
+            Err(_) => return 0,
+        };
+
+        let sessions = JAVA_SESSIONS.read().unwrap();
+        if let Some(session) = sessions.get(&peer_id_str) {
+            let s = session.lock().unwrap();
+            s.width
+        } else {
+            0
+        }
+    }
+
+    #[no_mangle]
+    pub unsafe extern "system" fn Java_com_example_rustdeskjava_RustDeskCore_getHeight(
+        env: JNIEnv,
+        _class: JClass,
+        peer_id: JString,
+    ) -> jint {
+        let mut env = env;
+        let peer_id_str: String = match env.get_string(&peer_id) {
+            Ok(s) => s.into(),
+            Err(_) => return 0,
+        };
+
+        let sessions = JAVA_SESSIONS.read().unwrap();
+        if let Some(session) = sessions.get(&peer_id_str) {
+            let s = session.lock().unwrap();
+            s.height
+        } else {
+            0
+        }
+    }
+
+    #[no_mangle]
+    pub unsafe extern "system" fn Java_com_example_rustdeskjava_RustDeskCore_getRgba(
+        env: JNIEnv,
+        _class: JClass,
+        peer_id: JString,
+        _display: jint,
+        buffer: JByteBuffer,
+    ) {
+        let mut env = env;
+        let peer_id_str: String = match env.get_string(&peer_id) {
+            Ok(s) => s.into(),
+            Err(_) => return,
+        };
+
+        let sessions = JAVA_SESSIONS.read().unwrap();
+        if let Some(session) = sessions.get(&peer_id_str) {
+            let s = session.lock().unwrap();
+            if !s.rgba_data.is_empty() {
+                if let Ok(buf_ptr) = env.get_direct_buffer_address(&buffer) {
+                    if let Ok(buf_len) = env.get_direct_buffer_capacity(&buffer) {
+                        let copy_len = std::cmp::min(s.rgba_data.len(), buf_len);
+                        std::ptr::copy_nonoverlapping(
+                            s.rgba_data.as_ptr(),
+                            buf_ptr,
+                            copy_len,
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[no_mangle]
+    pub unsafe extern "system" fn Java_com_example_rustdeskjava_RustDeskCore_getSessionError(
+        env: JNIEnv,
+        _class: JClass,
+        peer_id: JString,
+    ) -> jstring {
+        let mut env = env;
+        let peer_id_str: String = match env.get_string(&peer_id) {
+            Ok(s) => s.into(),
+            Err(_) => return std::ptr::null_mut(),
+        };
+
+        let sessions = JAVA_SESSIONS.read().unwrap();
+        if let Some(session) = sessions.get(&peer_id_str) {
+            let s = session.lock().unwrap();
+            if let Some(ref err) = s.error {
+                return env.new_string(err).unwrap_or_default().into_raw();
+            }
+        }
+        env.new_string("").unwrap_or_default().into_raw()
+    }
+}

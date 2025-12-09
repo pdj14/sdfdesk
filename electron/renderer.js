@@ -2,6 +2,7 @@ console.log("Renderer process loaded");
 
 const canvas = document.getElementById('screenCanvas');
 const ctx = canvas.getContext('2d');
+const statusEl = document.getElementById('status');
 
 // Cursor overlay
 const cursorOverlay = document.createElement('img');
@@ -13,23 +14,39 @@ document.body.appendChild(cursorOverlay);
 
 let videoWidth = 0;
 let videoHeight = 0;
+let ws = null;
+
+function updateStatus(connected) {
+    if (statusEl) {
+        if (connected) {
+            statusEl.textContent = '● Connected';
+            statusEl.className = 'status';
+        } else {
+            statusEl.textContent = '● Disconnected';
+            statusEl.className = 'status disconnected';
+        }
+    }
+}
 
 // Retry connection logic
 function connect() {
     console.log("Connecting to WebSocket...");
-    const ws = new WebSocket("ws://127.0.0.1:21121");
+    ws = new WebSocket("ws://127.0.0.1:21121");
     ws.binaryType = "arraybuffer";
 
     ws.onopen = () => {
         console.log("WebSocket connected to ws://127.0.0.1:21121");
+        updateStatus(true);
     };
 
     ws.onerror = (error) => {
         console.error("WebSocket error:", error);
+        updateStatus(false);
     };
 
     ws.onclose = (event) => {
         console.log("WebSocket closed:", event.code, event.reason);
+        updateStatus(false);
         // Optional: retry? For now, just log.
     };
 
@@ -61,18 +78,7 @@ function connect() {
             if (rawData.length === imageData.data.length) {
                 // Copy data
                 imageData.data.set(rawData);
-
-                // // Manually swap Red and Blue channels (BGRA -> RGBA or vice versa)
-                // // Because the previous Rust-side fix might not have worked or we need to invert it.
-                // // This is a fallback to ensure colors are correct.
-                // const data = imageData.data;
-                // for (let i = 0; i < data.length; i += 4) {
-                //     const red = data[i];
-                //     data[i] = data[i + 2]; // Set Red to Blue
-                //     data[i + 2] = red;     // Set Blue to Red
-                // }
             } else {
-                // console.warn(`Data length mismatch: expected ${imageData.data.length}, got ${rawData.length}`);
                 // Ignore mismatch frames to avoid crash
                 return;
             }
@@ -86,7 +92,6 @@ function connect() {
                 const msg = JSON.parse(jsonText);
                 if (msg.type === 'cursor_data') {
                     // msg.data is base64 encoded RAW PIXELS (RGBA), NOT a PNG file.
-                    // We need to convert it to an image.
                     const binaryString = atob(msg.data);
                     const len = binaryString.length;
                     const bytes = new Uint8Array(len);
@@ -118,19 +123,15 @@ function connect() {
                     const hoty = parseInt(cursorOverlay.dataset.hoty || '0');
 
                     const rect = canvas.getBoundingClientRect();
-                    // Calculate scale if canvas is displayed at different size than its resolution
                     const scaleX = rect.width / canvas.width;
                     const scaleY = rect.height / canvas.height;
 
-                    // msg.x/y are in video coordinates.
                     const screenX = rect.left + (msg.x * scaleX) - (hotx * scaleX);
                     const screenY = rect.top + (msg.y * scaleY) - (hoty * scaleY);
 
                     cursorOverlay.style.left = `${screenX}px`;
                     cursorOverlay.style.top = `${screenY}px`;
-                    // cursorOverlay.style.width = `${msg.width || 32}px`; // Optional
                 } else if (msg.type === 'error') {
-                    // Display error message overlay
                     console.error('Connection error:', msg);
 
                     const errorDiv = document.createElement('div');
@@ -167,7 +168,6 @@ function connect() {
 
                     document.body.appendChild(errorDiv);
 
-                    // Auto-close after 15 seconds
                     setTimeout(() => {
                         if (errorDiv.parentNode) {
                             errorDiv.remove();
@@ -189,8 +189,6 @@ function connect() {
 
     function getScaledCoordinates(e) {
         const rect = canvas.getBoundingClientRect();
-        // Scale factor: Video Resolution / Displayed Size
-        // If videoWidth is 0, avoid division by zero
         if (videoWidth === 0 || videoHeight === 0) return { x: Math.round(e.offsetX), y: Math.round(e.offsetY) };
 
         const scaleX = videoWidth / rect.width;
@@ -246,27 +244,85 @@ function connect() {
         e.preventDefault();
     }, { passive: false });
 
-    // Prevent context menu on right click
     canvas.addEventListener('contextmenu', (e) => {
         e.preventDefault();
     });
 
     window.addEventListener('keydown', (e) => {
+        // Don't capture input field key events
+        if (e.target.tagName === 'INPUT') return;
+
         sendInput({
             type: 'keydown',
             key: e.key
         });
-        if (['Tab', 'Alt', 'Control', 'Meta', 'Shift'].includes(e.key)) {
-            // e.preventDefault(); 
-        }
     });
 
     window.addEventListener('keyup', (e) => {
+        // Don't capture input field key events
+        if (e.target.tagName === 'INPUT') return;
+
         sendInput({
             type: 'keyup',
             key: e.key
         });
     });
+
+    // ========================================
+    // Login Control Buttons
+    // ========================================
+
+    // Send Ctrl+Alt+Delete (SAS)
+    document.getElementById('btnCAD').addEventListener('click', () => {
+        console.log('Sending Ctrl+Alt+Delete...');
+        sendInput({
+            type: 'send_sas'
+        });
+    });
+
+    // Send ID (username) - use env var if provided
+    const unlockId = process.env.SDFDESK_UNLOCK_ID || '';
+    const unlockPw = process.env.SDFDESK_UNLOCK_PW || '';
+
+    // Show buttons if credentials were provided via CLI
+    if (unlockId) {
+        document.getElementById('dividerID').style.display = 'block';
+        document.getElementById('btnSendID').style.display = 'inline-block';
+        console.log('Unlock ID provided via CLI, showing Send UserId button');
+    }
+    if (unlockPw) {
+        document.getElementById('dividerPW').style.display = 'block';
+        document.getElementById('btnSendPW').style.display = 'inline-block';
+        console.log('Unlock PW provided via CLI, showing Send PW button');
+    }
+
+    document.getElementById('btnSendID').addEventListener('click', () => {
+        if (!unlockId) {
+            console.log('No unlock ID provided');
+            return;
+        }
+        console.log('Sending UserId from CLI...');
+        sendInput({
+            type: 'send_text',
+            text: unlockId,
+            enter: false
+        });
+    });
+
+    // Send PW (password) - use env var if provided
+    document.getElementById('btnSendPW').addEventListener('click', () => {
+        if (!unlockPw) {
+            console.log('No unlock PW provided');
+            return;
+        }
+        console.log('Sending Password from CLI...');
+        sendInput({
+            type: 'send_text',
+            text: unlockPw,
+            enter: true  // Press Enter after password
+        });
+    });
 }
 
 connect();
+

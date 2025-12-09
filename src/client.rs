@@ -169,6 +169,21 @@ lazy_static::lazy_static! {
     static ref CLIPBOARD_STATE: Arc<Mutex<ClipboardState>> = Arc::new(Mutex::new(ClipboardState::new()));
 }
 
+// RDP credentials passed from client CLI for headless mode
+lazy_static::lazy_static! {
+    pub static ref CLIENT_RDP_CREDENTIALS: Arc<Mutex<(String, String)>> = Arc::new(Mutex::new((String::new(), String::new())));
+}
+
+/// Set RDP credentials for client connection (for headless mode)
+pub fn set_client_rdp_credentials(rdp_id: String, rdp_pw: String) {
+    *CLIENT_RDP_CREDENTIALS.lock().unwrap() = (rdp_id, rdp_pw);
+}
+
+/// Get RDP credentials for LoginRequest
+pub fn get_client_rdp_credentials() -> (String, String) {
+    CLIENT_RDP_CREDENTIALS.lock().unwrap().clone()
+}
+
 const PUBLIC_SERVER: &str = "public";
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -2665,6 +2680,9 @@ impl LoginConfigHandler {
         } else {
             Bytes::new()
         };
+        // Get RDP credentials for headless mode
+        let (rdp_username, rdp_password) = get_client_rdp_credentials();
+        
         let mut lr = LoginRequest {
             username: pure_id,
             password: password.into(),
@@ -2681,6 +2699,8 @@ impl LoginConfigHandler {
             })
             .into(),
             hwid,
+            rdp_username,
+            rdp_password,
             ..Default::default()
         };
         match self.conn_type {

@@ -195,6 +195,18 @@ fn main() {
                 .help("Start local server for Electron")
                 .num_args(1),
         )
+        .arg(
+            Arg::new("rdp-id")
+                .long("rdp-id")
+                .help("RDP username for headless mode (auto-creates localhost RDP session)")
+                .num_args(1),
+        )
+        .arg(
+            Arg::new("rdp-pw")
+                .long("rdp-pw")
+                .help("RDP password for headless mode")
+                .num_args(1),
+        )
         .get_matches();
 
     use hbb_common::config::LocalConfig;
@@ -243,7 +255,10 @@ fn main() {
         let token = LocalConfig::get_option("access_token");
         let unlock_id = matches.get_one::<String>("unlock-id").map(|s| s.to_owned()).unwrap_or_default();
         let unlock_pw = matches.get_one::<String>("unlock-pw").map(|s| s.to_owned()).unwrap_or_default();
-        cli::connect_test(p, key, token, unlock_id, unlock_pw);
+        // RDP credentials for headless mode
+        let rdp_id = matches.get_one::<String>("rdp-id").map(|s| s.to_owned()).unwrap_or_default();
+        let rdp_pw = matches.get_one::<String>("rdp-pw").map(|s| s.to_owned()).unwrap_or_default();
+        cli::connect_test(p, key, token, unlock_id, unlock_pw, rdp_id, rdp_pw);
     } else if matches.get_flag("server") {
         let id = hbb_common::config::Config::get_id();
         println!("========================================");
@@ -255,6 +270,26 @@ fn main() {
             hbb_common::config::Config::set_option("direct-server".to_owned(), "Y".to_owned());
             println!("Direct server enabled (port 21118)");
         }
+        
+        // Check for RDP mode (headless support)
+        #[cfg(windows)]
+        {
+            let rdp_id = matches.get_one::<String>("rdp-id");
+            let rdp_pw = matches.get_one::<String>("rdp-pw");
+            
+            if let (Some(rdp_id), Some(rdp_pw)) = (rdp_id, rdp_pw) {
+                crate::rdp_session::set_rdp_credentials(rdp_id.clone(), rdp_pw.clone());
+                println!("RDP mode enabled for headless operation");
+                
+                // Check if display is connected
+                if !crate::rdp_session::has_display_connected() {
+                    println!("No display detected - will auto-create RDP session on client connect");
+                } else {
+                    println!("Display detected - RDP mode on standby");
+                }
+            }
+        }
+        
         crate::start_server(true, false);
     } else if matches.get_flag("cm") || matches.get_flag("cm-no-ui") {
         crate::cli::start_cm_no_ui();
@@ -335,7 +370,18 @@ fn main() {
             hbb_common::config::Config::set_option("direct-server".to_owned(), "Y".to_owned());
         }
         #[cfg(target_os = "windows")]
-        librustdesk::start_os_service();
+        {
+            // Debug: Log config path and password status for troubleshooting
+            use hbb_common::config::Config;
+            let config_file = Config::file();
+            log::info!("[Service] Config file path: {:?}", config_file);
+            log::info!("[Service] current_exe: {:?}", std::env::current_exe());
+            let permanent_password = Config::get_permanent_password();
+            log::info!("[Service] Permanent password length: {}", permanent_password.len());
+            log::info!("[Service] Permanent password is empty: {}", permanent_password.is_empty());
+            
+            librustdesk::start_os_service();
+        }
     } else if matches.get_flag("install-service") {
         #[cfg(target_os = "windows")]
         {

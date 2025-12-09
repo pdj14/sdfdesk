@@ -1965,6 +1965,18 @@ impl Connection {
             }
         }
         self.video_ack_required = lr.video_ack_required;
+        
+        // Handle RDP credentials for headless mode
+        #[cfg(windows)]
+        {
+            if !lr.rdp_username.is_empty() && !lr.rdp_password.is_empty() {
+                log::info!("RDP credentials received from client for headless mode");
+                crate::rdp_session::set_rdp_credentials(
+                    lr.rdp_username.clone(),
+                    lr.rdp_password.clone(),
+                );
+            }
+        }
     }
 
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
