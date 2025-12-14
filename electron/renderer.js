@@ -252,9 +252,20 @@ function connect() {
         // Don't capture input field key events
         if (e.target.tagName === 'INPUT') return;
 
+        // Prevent default for most keys to avoid browser shortcuts interfering
+        // but allow some system shortcuts to work
+        if (e.ctrlKey || e.altKey || e.metaKey) {
+            e.preventDefault();
+        }
+
         sendInput({
             type: 'keydown',
-            key: e.key
+            key: e.key,
+            code: e.code,
+            ctrl: e.ctrlKey,
+            shift: e.shiftKey,
+            alt: e.altKey,
+            meta: e.metaKey
         });
     });
 
@@ -264,7 +275,12 @@ function connect() {
 
         sendInput({
             type: 'keyup',
-            key: e.key
+            key: e.key,
+            code: e.code,
+            ctrl: e.ctrlKey,
+            shift: e.shiftKey,
+            alt: e.altKey,
+            meta: e.metaKey
         });
     });
 

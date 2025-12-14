@@ -49,9 +49,33 @@ enum InputEvent {
     #[serde(rename = "wheel")]
     Wheel { delta_x: i32, delta_y: i32 },
     #[serde(rename = "keydown")]
-    KeyDown { key: String },
+    KeyDown { 
+        key: String,
+        #[serde(default)]
+        code: String,
+        #[serde(default)]
+        ctrl: bool,
+        #[serde(default)]
+        shift: bool,
+        #[serde(default)]
+        alt: bool,
+        #[serde(default)]
+        meta: bool,
+    },
     #[serde(rename = "keyup")]
-    KeyUp { key: String },
+    KeyUp { 
+        key: String,
+        #[serde(default)]
+        code: String,
+        #[serde(default)]
+        ctrl: bool,
+        #[serde(default)]
+        shift: bool,
+        #[serde(default)]
+        alt: bool,
+        #[serde(default)]
+        meta: bool,
+    },
     // Login control events
     #[serde(rename = "send_sas")]
     SendSas,
@@ -387,13 +411,13 @@ fn handle_input_event(sender: &Arc<std::sync::RwLock<Option<mpsc::UnboundedSende
             let mask = MOUSE_TYPE_WHEEL;
             send_mouse(mask, delta_x, delta_y, false, false, false, false, &interface);
         }
-        InputEvent::KeyDown { key } => {
-            log::info!("KeyDown: {}", key);
-            send_key(&key, true, &interface);
+        InputEvent::KeyDown { key, code: _, ctrl, shift, alt, meta } => {
+            log::trace!("KeyDown: {} (ctrl={}, shift={}, alt={}, meta={})", key, ctrl, shift, alt, meta);
+            send_key(&key, true, ctrl, shift, alt, meta, &interface);
         }
-        InputEvent::KeyUp { key } => {
-            log::info!("KeyUp: {}", key);
-            send_key(&key, false, &interface);
+        InputEvent::KeyUp { key, code: _, ctrl, shift, alt, meta } => {
+            log::trace!("KeyUp: {} (ctrl={}, shift={}, alt={}, meta={})", key, ctrl, shift, alt, meta);
+            send_key(&key, false, ctrl, shift, alt, meta, &interface);
         }
         InputEvent::SendSas => {
             log::info!("Sending Ctrl+Alt+Delete (SAS)...");
@@ -410,30 +434,39 @@ fn handle_input_event(sender: &Arc<std::sync::RwLock<Option<mpsc::UnboundedSende
         }
         InputEvent::SendText { text, enter } => {
             log::info!("Sending text (len={}), enter={}", text.len(), enter);
-            // Type each character as key events
+            // Type each character as key events (no modifiers for text input)
             for c in text.chars() {
                 let key_str = c.to_string();
-                send_key(&key_str, true, &interface);
-                send_key(&key_str, false, &interface);
+                send_key(&key_str, true, false, false, false, false, &interface);
+                send_key(&key_str, false, false, false, false, false, &interface);
             }
             // Send Enter key if requested
             if enter {
                 std::thread::sleep(std::time::Duration::from_millis(100));
-                send_key("Enter", true, &interface);
-                send_key("Enter", false, &interface);
+                send_key("Enter", true, false, false, false, false, &interface);
+                send_key("Enter", false, false, false, false, false, &interface);
             }
         }
     }
 }
 
-fn send_key(key: &str, down: bool, interface: &impl crate::client::Interface) {
+fn send_key(key: &str, down: bool, ctrl: bool, shift: bool, alt: bool, meta: bool, interface: &impl crate::client::Interface) {
     use hbb_common::message_proto::{KeyEvent, ControlKey, KeyboardMode};
 
     let mut key_event = KeyEvent::new();
-    key_event.press = down;
+    
+    // Use 'down' for keydown and !down (false) for keyup
+    // RustDesk uses 'down' field for key state
+    if down {
+        key_event.down = true;
+    }
     key_event.mode = KeyboardMode::Legacy.into();
 
     let lower = key.to_lowercase();
+    
+    // Check if the key itself is a modifier key
+    let is_modifier_key = matches!(lower.as_str(), "control" | "shift" | "alt" | "meta");
+    
     match lower.as_str() {
         "control" => key_event.set_control_key(ControlKey::Control),
         "shift" => key_event.set_control_key(ControlKey::Shift),
@@ -454,6 +487,7 @@ fn send_key(key: &str, down: bool, interface: &impl crate::client::Interface) {
         "insert" => key_event.set_control_key(ControlKey::Insert),
         "delete" => key_event.set_control_key(ControlKey::Delete),
         "capslock" => key_event.set_control_key(ControlKey::CapsLock),
+        " " => key_event.set_control_key(ControlKey::Space),
         _ => {
             if key.len() == 1 {
                 if let Some(c) = key.chars().next() {
@@ -462,9 +496,6 @@ fn send_key(key: &str, down: bool, interface: &impl crate::client::Interface) {
             } else if key.starts_with("F") && key.len() > 1 {
                 if let Ok(n) = key[1..].parse::<i32>() {
                     if n >= 1 && n <= 12 {
-                         // Map F1-F12 to ControlKey::F1-F12
-                         // Enum values are usually sequential, but better to match explicitly or use from_i32 if available.
-                         // For now, let's try to match common F-keys.
                          match n {
                              1 => key_event.set_control_key(ControlKey::F1),
                              2 => key_event.set_control_key(ControlKey::F2),
@@ -484,6 +515,12 @@ fn send_key(key: &str, down: bool, interface: &impl crate::client::Interface) {
                 }
             }
         }
+    }
+
+    // Apply modifier keys using legacy_modifiers (only for non-modifier keys)
+    // When pressing a modifier key itself, we don't add it to the modifiers list
+    if !is_modifier_key {
+        crate::keyboard::client::legacy_modifiers(&mut key_event, alt, ctrl, shift, meta);
     }
 
     // Only send if we set something

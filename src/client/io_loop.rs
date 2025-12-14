@@ -2342,10 +2342,8 @@ impl<T: InvokeUiSession> Remote<T> {
                   pixelbuffer: bool| {
                 *frame_count.write().unwrap() += 1;
                 if pixelbuffer {
-                    log::info!("Calling handler.on_rgba for display {}, size {}x{}", display, data.w, data.h);
                     handler.on_rgba(display, data);
                 } else {
-                    log::info!("Calling handler.on_texture for display {}", display);
                     #[cfg(all(feature = "vram", feature = "flutter"))]
                     handler.on_texture(display, _texture);
                 }

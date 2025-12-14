@@ -78,7 +78,14 @@ fn main() {
             Arg::new("key")
                 .short('k')
                 .long("key")
-                .help("")
+                .help("Server public key (for custom ID/Relay server)")
+                .num_args(1),
+        )
+        .arg(
+            Arg::new("pwd")
+                .short('P')
+                .long("pwd")
+                .help("Connection password for remote peer")
                 .num_args(1),
         )
         .arg(
@@ -207,6 +214,12 @@ fn main() {
                 .help("RDP password for headless mode")
                 .num_args(1),
         )
+        .arg(
+            Arg::new("list-peers")
+                .long("list-peers")
+                .help("List online peers from server (format: host:port or just host, default port=21114)")
+                .num_args(1),
+        )
         .get_matches();
 
     use hbb_common::config::LocalConfig;
@@ -251,14 +264,50 @@ fn main() {
     } else if let Some(p) = matches.get_one::<String>("connect") {
         common::test_rendezvous_server();
         common::test_nat_type();
-        let key = matches.get_one::<String>("key").map(|s| s.as_str()).unwrap_or("").to_owned();
+        // --pwd is for connection password, --key is for server public key (separate concerns)
+        let pwd = matches.get_one::<String>("pwd").map(|s| s.as_str()).unwrap_or("").to_owned();
         let token = LocalConfig::get_option("access_token");
         let unlock_id = matches.get_one::<String>("unlock-id").map(|s| s.to_owned()).unwrap_or_default();
         let unlock_pw = matches.get_one::<String>("unlock-pw").map(|s| s.to_owned()).unwrap_or_default();
         // RDP credentials for headless mode
         let rdp_id = matches.get_one::<String>("rdp-id").map(|s| s.to_owned()).unwrap_or_default();
         let rdp_pw = matches.get_one::<String>("rdp-pw").map(|s| s.to_owned()).unwrap_or_default();
-        cli::connect_test(p, key, token, unlock_id, unlock_pw, rdp_id, rdp_pw);
+        cli::connect_test(p, pwd, token, unlock_id, unlock_pw, rdp_id, rdp_pw);
+    } else if let Some(server) = matches.get_one::<String>("list-peers") {
+        // Query peers from sdfdesk-server API
+        // Default API port is main_port - 2 = 21116 - 2 = 21114
+        let url = if server.contains(':') {
+            format!("http://{}/api/peers", server)
+        } else {
+            format!("http://{}:21114/api/peers", server)
+        };
+        println!("Querying peers from {}...", url);
+        match reqwest::blocking::get(&url) {
+            Ok(response) => {
+                if response.status().is_success() {
+                    match response.json::<Vec<serde_json::Value>>() {
+                        Ok(peers) => {
+                            println!("\n{:<20} {:<20} {}", "ID", "IP", "Online");
+                            println!("{}", "-".repeat(50));
+                            for peer in peers {
+                                let id = peer.get("id").and_then(|v| v.as_str()).unwrap_or("-");
+                                let ip = peer.get("ip").and_then(|v| v.as_str()).unwrap_or("-");
+                                let online = peer.get("online").and_then(|v| v.as_bool()).unwrap_or(false);
+                                println!("{:<20} {:<20} {}", id, ip, if online { "✓" } else { "✗" });
+                            }
+                        }
+                        Err(e) => {
+                            log::error!("Failed to parse response: {}", e);
+                        }
+                    }
+                } else {
+                    log::error!("Server returned error: {}", response.status());
+                }
+            }
+            Err(e) => {
+                log::error!("Failed to connect to server: {}", e);
+            }
+        }
     } else if matches.get_flag("server") {
         let id = hbb_common::config::Config::get_id();
         println!("========================================");
